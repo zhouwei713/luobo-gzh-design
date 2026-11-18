@@ -244,7 +244,7 @@ REDFOX_BATCH_INTERVAL_MS=1000
 
 PUBLIC_URL是用户访问的公网HTTPS源，不带路径、3100端口或/api。TRUST_PROXY_LOOPBACK=1只用于本方案的自管Nginx覆盖X-Real-IP且Node仅监听本机。密钥仅放后端，不填入VITE变量或上传GitHub。
 
-原CREDENTIALS_ENCRYPTION_KEY非空则保留原值；留空则首次启动生成data/.credentials-key。迁移、恢复时必须保留配套密钥，不能随意重建。缺少AI或RedFox密钥仍可验证基础排版、账号和文章。
+原CREDENTIALS_ENCRYPTION_KEY非空则保留原值；留空则首次启动生成data/.credentials-key。迁移、恢复时必须保留配套密钥，不能随意重建。缺少AI或RedFox密钥仍可验证访客排版、本机方案与草稿备份；生产账号和云端文章暂未开放。
 
 排版工作台的AI排版、封面与图文生成统一使用用户在“工作台设置”填写的个人API，游客和登录用户均可设置，配置仅存当前浏览器并直接请求服务商。接口须支持浏览器跨域访问，HTTPS站点须使用HTTPS接口；请求失败不自动改用平台API。服务器.env中的OPENAI配置不作为这些个人功能的默认来源，原后端选题简报等接口仍使用服务器配置和既有权限。会员平台API的来源选择、服务端权益及额度另见[待办](TODO.md)，本轮未开放会员平台入口。
 

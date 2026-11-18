@@ -11,6 +11,7 @@ import {
   Save,
   Sparkles,
   Trash2,
+  TextCursorInput,
   Upload,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -23,14 +24,15 @@ interface StyleSchemeControlProps {
   editingSchemeId?: string | null;
   editingDirty?: boolean;
   onApply: (scheme: StyleScheme) => void;
-  onCreate: (name: string) => void;
+  onCreate: (name: string) => boolean;
+  onRename: (id:string,name:string) => boolean;
   onEdit: (scheme: StyleScheme) => void;
   onEditFeatured: (scheme: StyleScheme) => void;
   onDuplicate: (scheme: StyleScheme) => void;
   onDelete: (schemeId: string) => void;
   onMove: (schemeId: string, direction: -1 | 1) => void;
   onSaveEditing: () => void;
-  onSaveAs: (name: string) => void;
+  onSaveAs: (name: string) => boolean;
   onResetEditing: () => void;
   onImport: (raw: string) => void;
   onExport: () => void;
@@ -124,6 +126,7 @@ export function StyleSchemeControl({
   editingDirty = false,
   onApply,
   onCreate,
+  onRename,
   onEdit,
   onEditFeatured,
   onDuplicate,
@@ -137,11 +140,13 @@ export function StyleSchemeControl({
 }: StyleSchemeControlProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'featured' | 'mine'>('featured');
+  const [renaming,setRenaming]=useState<{id:string;name:string}|null>(null);
   const [creating, setCreating] = useState(false);
   const [schemeName, setSchemeName] = useState('');
   const [savingAs, setSavingAs] = useState(false);
   const [saveAsName, setSaveAsName] = useState('');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [fileError,setFileError]=useState('');
   const rootRef = useRef<HTMLDivElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const allSchemes = [...STYLE_SCHEMES, ...customSchemes];
@@ -154,15 +159,17 @@ export function StyleSchemeControl({
     const handlePointerDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
+    const handleKeyDown=(event:KeyboardEvent)=>{if(event.key==='Escape'){setOpen(false);event.stopPropagation();}};
 
     document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown',handleKeyDown);
+    return () => {document.removeEventListener('mousedown', handlePointerDown);document.removeEventListener('keydown',handleKeyDown);};
   }, [open]);
 
   const handleCreate = () => {
     const name = schemeName.trim();
     if (!name) return;
-    onCreate(name);
+    if(!onCreate(name))return;
     setSchemeName('');
     setCreating(false);
     setTab('mine');
@@ -171,16 +178,18 @@ export function StyleSchemeControl({
   const handleSaveAs = () => {
     const name = saveAsName.trim();
     if (!name) return;
-    onSaveAs(name);
+    if(!onSaveAs(name))return;
     setSaveAsName('');
     setSavingAs(false);
   };
 
   const handleImportFile = async (file?: File) => {
     if (!file) return;
-    onImport(await file.text());
-    if (importRef.current) importRef.current.value = '';
-    setTab('mine');
+    try {
+      if(file.size>1024*1024){setFileError('方案文件不能超过1MB。');return;}
+      setFileError('');onImport(await file.text());setTab('mine');
+    } catch {setFileError('无法读取文件，请重新选择JSON方案文件。');}
+    finally {if (importRef.current) importRef.current.value = '';}
   };
 
   return (
@@ -193,33 +202,36 @@ export function StyleSchemeControl({
             ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
             : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
         }`}
-        aria-label="选择整套风格方案"
+        aria-label="排版方案"
         aria-expanded={open}
         title={activeScheme ? `当前方案：${activeScheme.name}` : '当前为自定义组合'}
       >
         <LayoutGrid className="h-3.5 w-3.5" />
-        方案
+        排版方案
       </button>
 
       {open && (
-        <div className="wb-control-popover absolute right-0 top-9 z-50 w-[460px] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl shadow-gray-900/15">
+        <div className="wb-control-popover absolute left-0 top-9 z-50 w-[460px] rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl shadow-gray-900/15" aria-label="排版方案库">
           <div className="mb-3 flex items-start justify-between gap-4">
             <div>
               <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
                 <Sparkles className="h-4 w-4 text-emerald-600" />
-                风格方案库
+                排版方案库
               </div>
-              <div className="mt-1 text-[11px] leading-4 text-gray-400">精选组合与个人方案统一管理</div>
+              <div className="mt-1 text-[11px] leading-4 text-gray-400">无需登录，仅保存在当前浏览器；清理站点数据前请导出备份。</div>
             </div>
             <button
               type="button"
               onClick={() => setCreating((current) => !current)}
-              className="flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-emerald-700"
+              className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-emerald-700"
             >
               <Plus className="h-3 w-3" />
               保存当前
             </button>
           </div>
+
+          {fileError&&<p role="alert" className="mb-3 text-xs text-rose-600">{fileError}</p>}
+          {renaming&&<form className="mb-3 flex gap-2" onSubmit={event=>{event.preventDefault();if(onRename(renaming.id,renaming.name))setRenaming(null);}}><input aria-label="新的预设名称" autoFocus maxLength={40} value={renaming.name} onChange={event=>setRenaming({...renaming,name:event.target.value})} className="min-w-0 flex-1 rounded border px-2 py-1 text-xs"/><button type="submit" disabled={!renaming.name.trim()} className="text-xs text-emerald-700">确认改名</button><button type="button" onClick={()=>setRenaming(null)} className="text-xs">取消</button></form>}
 
           {creating && (
             <div className="mb-3 flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2">
@@ -409,6 +421,7 @@ export function StyleSchemeControl({
                       <button type="button" onClick={() => onEdit(scheme)} className={actionButtonClass} aria-label={`编辑方案 ${scheme.name}`}>
                         <Pencil className="h-3 w-3" />
                       </button>
+                      <button type="button" onClick={()=>setRenaming({id:scheme.id,name:scheme.name})} className={actionButtonClass} aria-label={`重命名方案 ${scheme.name}`} title="重命名"><TextCursorInput className="h-3 w-3" /></button>
                       <button type="button" onClick={() => onDuplicate(scheme)} className={actionButtonClass} aria-label={`复制方案 ${scheme.name}`}>
                         <Copy className="h-3 w-3" />
                       </button>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 
 import { getAITypesetMarkdown } from '../ai/formatter';
+import {saveDraftBackup} from '../services/draftBackups';
+import {LazyTool} from '../components/ui/LazyTool';
 import {ApiConnectionTest} from '../components/ui/ApiConnectionTest';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ArticleControls } from '../features/articles/ArticleControls';
@@ -39,17 +41,11 @@ import {
 } from '../services/draftStorage';
 import { Preview } from '../components/preview/Preview';
 import { buildWechatCopyRoot, copyWechatArticle } from '../core/wechatExport';
-import { CheatsheetModal } from '../components/ui/CheatsheetModal';
 import { DevIdentitySwitcher } from '../components/ui/DevIdentitySwitcher';
 import { api as discoveryApi } from '../features/discovery/api';
 import {accountsEnabled,phaseTwoEnabled} from '../services/releaseScope';
-import { FeishuSidebar } from '../components/ui/FeishuSidebar';
 import { HeaderMenu } from '../components/ui/HeaderMenu';
 import { InputPromptModal } from '../components/ui/InputPromptModal';
-import { IllustrationJobPanel } from '../components/ui/IllustrationJobPanel';
-import { IllustrationPlanModal } from '../components/ui/IllustrationPlanModal';
-import { PlatformExportPanel } from '../components/ui/PlatformExportPanel';
-import { ImageExportPanel } from '../components/ui/ImageExportPanel';
 import { ToastStack, type ToastItem, type ToastTone } from '../components/ui/ToastStack';
 import { TypographyControl } from '../components/ui/TypographyControl';
 import { ComponentStyleControl } from '../components/ui/ComponentStyleControl';
@@ -125,6 +121,14 @@ import {
   type XArticleExport,
   type XThreadExport,
 } from '../services/xExportService';
+
+const DraftBackupsPanel = lazy(() => import('../components/ui/DraftBackupsPanel').then(module => ({default:module.DraftBackupsPanel})));
+const CheatsheetModal = lazy(() => import('../components/ui/CheatsheetModal').then(module => ({default:module.CheatsheetModal})));
+const FeishuSidebar = lazy(() => import('../components/ui/FeishuSidebar').then(module => ({default:module.FeishuSidebar})));
+const IllustrationJobPanel = lazy(() => import('../components/ui/IllustrationJobPanel').then(module => ({default:module.IllustrationJobPanel})));
+const IllustrationPlanModal = lazy(() => import('../components/ui/IllustrationPlanModal').then(module => ({default:module.IllustrationPlanModal})));
+const PlatformExportPanel = lazy(() => import('../components/ui/PlatformExportPanel').then(module => ({default:module.PlatformExportPanel})));
+const ImageExportPanel = lazy(() => import('../components/ui/ImageExportPanel').then(module => ({default:module.ImageExportPanel})));
 
 const defaultMarkdown = `# 01 | 完整排版演示 | /// MARKDOWN GUIDE
 
@@ -263,6 +267,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
   const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('openai_api_base') || '');
   const [apiModel, setApiModel] = useState(localStorage.getItem('openai_model') || '');
   const [showSettings, setShowSettings] = useState(() => new URLSearchParams(location.search).get('settings') === '1');
+  const [showDraftBackups,setShowDraftBackups]=useState(false);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
   const [activeTheme, setActiveTheme] = useState<Theme>(DEFAULT_THEME);
   const [activeLayoutStyle, setActiveLayoutStyle] = useState<LayoutStyle>(DEFAULT_LAYOUT_STYLE);
@@ -407,13 +412,13 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
     setToastItems((current) => current.filter((item) => item.id !== id));
   };
 
-  const pushToast = (tone: ToastTone, title: string, message?: string) => {
+  const pushToast = useCallback((tone: ToastTone, title: string, message?: string) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setToastItems((current) => [...current, { id, tone, title, message }]);
     window.setTimeout(() => {
       setToastItems((current) => current.filter((item) => item.id !== id));
     }, 3600);
-  };
+  },[]);
 
   // 草稿自动保存：停止输入 800ms 后写入本地；存储写满时只提醒一次
   useEffect(()=>{
@@ -430,13 +435,24 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
       setDraftSaveState(ok ? 'saved' : 'error');
       if (!ok && !draftSaveFailedRef.current) {
         draftSaveFailedRef.current = true;
-        pushToast('error', '草稿自动保存失败', '浏览器本地存储已满（base64 图片很占空间），建议改用图床上传图片。');
+        pushToast('error', '草稿自动保存失败', '浏览器本地存储可能已满，请先导出正文，并减少内嵌图片。');
       } else if (ok) {
         draftSaveFailedRef.current = false;
       }
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [markdown,draftOwner]);
+  }, [markdown,draftOwner,pushToast]);
+
+  useEffect(()=>{
+    let previous=latestMarkdown.current,reported=false;
+    const timer=window.setInterval(()=>{
+      const current=latestMarkdown.current;
+      if(current===previous)return;
+      try{saveDraftBackup(draftOwner,current,'自动历史版本');window.dispatchEvent(new Event('gzh-draft-backups-changed'));previous=current;reported=false;}
+      catch{if(!reported){reported=true;pushToast('info','历史备份未保存','本机历史备份不可用，请导出正文备份。正文自动保存状态请查看页面提示。');}}
+    },60_000);
+    return()=>window.clearInterval(timer);
+  },[draftOwner,pushToast]);
 
   /** 整篇替换正文前先留一份快照，之后可以从「AI 工具」菜单撤销 */
   const replaceMarkdownWithUndo = (nextMarkdown: string, label: string) => {
@@ -854,19 +870,25 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
   const updateCustomStyleSchemes = (
     updater: (current: StyleScheme[]) => StyleScheme[],
   ) => {
-    setCustomStyleSchemes((current) => {
-      const next = updater(current).slice(0, 30);
+    try {
+      const next = updater(customStyleSchemes);
+      if (next.length > 30) throw new Error('最多保存30套本机预设，请先导出备份并删除不再使用的方案。');
       saveCustomStyleSchemes(next);
-      return next;
-    });
+      setCustomStyleSchemes(next);
+      return true;
+    } catch (error) {
+      pushToast('error','预设未保存',error instanceof Error?error.message:'浏览器存储不可用，请先导出备份。');
+      return false;
+    }
   };
 
   const handleCreateCustomStyleScheme = (name: string) => {
     const scheme = createCustomStyleScheme(name, currentStyleSelection, currentSchemePreview);
 
-    updateCustomStyleSchemes((current) => [scheme, ...current]);
+    if (!updateCustomStyleSchemes((current) => [scheme, ...current])) return false;
     setEditingSchemeId(scheme.id);
     pushToast('success', '方案已创建', `“${scheme.name}”已保存到当前浏览器。`);
+    return true;
   };
 
   const handleEditCustomStyleScheme = (scheme: StyleScheme) => {
@@ -877,7 +899,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
 
   const handleEditFeaturedStyleScheme = (scheme: StyleScheme) => {
     const duplicated = duplicateAsCustomStyleScheme(scheme);
-    updateCustomStyleSchemes((current) => [duplicated, ...current]);
+    if (!updateCustomStyleSchemes((current) => [duplicated, ...current])) return;
     handleApplyStyleScheme(duplicated, true);
     setEditingSchemeId(duplicated.id);
     pushToast('success', '已复制并进入编辑', `“${duplicated.name}”已加入我的方案。`);
@@ -886,17 +908,18 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
   const handleSaveEditingStyleScheme = () => {
     if (!editingSchemeId || !editingScheme) return;
     const updated = updateCustomStyleScheme(editingScheme, currentStyleSelection, currentSchemePreview);
-    updateCustomStyleSchemes((current) => current.map((scheme) => (
+    if (!updateCustomStyleSchemes((current) => current.map((scheme) => (
       scheme.id === updated.id ? updated : scheme
-    )));
+    )))) return;
     pushToast('success', '修改已保存', `“${updated.name}”已更新。`);
   };
 
   const handleSaveAsStyleScheme = (name: string) => {
     const scheme = createCustomStyleScheme(name, currentStyleSelection, currentSchemePreview);
-    updateCustomStyleSchemes((current) => [scheme, ...current]);
+    if (!updateCustomStyleSchemes((current) => [scheme, ...current])) return false;
     setEditingSchemeId(scheme.id);
     pushToast('success', '方案已另存', `“${scheme.name}”已加入我的方案。`);
+    return true;
   };
 
   const handleResetEditingStyleScheme = () => {
@@ -907,15 +930,21 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
 
   const handleDuplicateStyleScheme = (scheme: StyleScheme) => {
     const duplicated = duplicateAsCustomStyleScheme(scheme);
-    updateCustomStyleSchemes((current) => [duplicated, ...current]);
+    if (!updateCustomStyleSchemes((current) => [duplicated, ...current])) return;
     pushToast('success', '方案已复制', `“${duplicated.name}”已加入我的方案。`);
   };
 
   const handleDeleteCustomStyleScheme = (schemeId: string) => {
     const scheme = customStyleSchemes.find((item) => item.id === schemeId);
-    updateCustomStyleSchemes((current) => current.filter((item) => item.id !== schemeId));
+    if (!updateCustomStyleSchemes((current) => current.filter((item) => item.id !== schemeId))) return;
     if (editingSchemeId === schemeId) setEditingSchemeId(null);
     pushToast('success', '方案已删除', scheme ? `“${scheme.name}”已从当前浏览器移除。` : undefined);
+  };
+
+  const handleRenameCustomStyleScheme = (id:string,name:string) => {
+    const clean=name.trim().slice(0,40);
+    if(!clean)return false;
+    return updateCustomStyleSchemes(current=>current.map(scheme=>scheme.id===id?{...scheme,name:clean,updatedAt:new Date().toISOString()}:scheme));
   };
 
   const handleMoveCustomStyleScheme = (schemeId: string, direction: -1 | 1) => {
@@ -938,7 +967,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
         return;
       }
 
-      updateCustomStyleSchemes((current) => [...imported, ...current]);
+      if (!updateCustomStyleSchemes((current) => [...imported, ...current])) return;
       setEditingSchemeId(null);
       pushToast('success', '方案已导入', `已加入 ${imported.length} 套风格方案。`);
     } catch {
@@ -1086,6 +1115,26 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
     }
   };
 
+  const schemeControlProps = {
+    activeSchemeId: activeStyleScheme?.id,
+    customSchemes: customStyleSchemes,
+    editingSchemeId: editingSchemeId,
+    editingDirty: editingDirty,
+    onApply: handleApplyStyleScheme,
+    onCreate: handleCreateCustomStyleScheme,
+    onEdit: handleEditCustomStyleScheme,
+    onEditFeatured: handleEditFeaturedStyleScheme,
+    onDuplicate: handleDuplicateStyleScheme,
+    onDelete: handleDeleteCustomStyleScheme,
+    onMove: handleMoveCustomStyleScheme,
+    onRename: handleRenameCustomStyleScheme,
+    onSaveEditing: handleSaveEditingStyleScheme,
+    onSaveAs: handleSaveAsStyleScheme,
+    onResetEditing: handleResetEditingStyleScheme,
+    onImport: handleImportCustomStyleSchemes,
+    onExport: handleExportCustomStyleSchemes
+  };
+
   const saveSettings = () => {
     localStorage.setItem('openai_api_key', apiKey.trim());
     localStorage.setItem('openai_api_base', apiBaseUrl);
@@ -1184,7 +1233,8 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
             </select>
           </div>
 
-          <div className="flex items-center space-x-2 border-l border-gray-200 pl-4">
+          <div className="flex items-center border-l border-gray-200 pl-4"><StyleSchemeControl {...schemeControlProps} /></div>
+          {accountsEnabled && (          <div className="flex items-center space-x-2 border-l border-gray-200 pl-4">
             <select
               className="w-36 cursor-pointer rounded-md border-none bg-gray-50 px-2 py-1 text-sm font-medium text-emerald-700 outline-none focus:ring-1 focus:ring-emerald-500"
               defaultValue=""
@@ -1194,7 +1244,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
                 event.target.value = '';
               }}
             >
-              <option value="">我的预设</option>
+              <option value="">云端预设</option>
               {canUseCloudPresets ? (
                 <>
                   <option value="save">保存当前组合...</option>
@@ -1214,7 +1264,8 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
                 <option value="mock-disabled">OSS 调试模式不启用云端预设</option>
               )}
             </select>
-          </div>
+          </div>)}
+
         </div>
 )}
         actions={(<>
@@ -1307,6 +1358,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
           <div className="wb-pane-heading">
             <span>Markdown 输入<small className="wb-draft-owner">{!accountsEnabled?'本机草稿 · 本浏览器':draftOwner==='guest'?'访客草稿 · 本浏览器':'当前账号草稿 · 本浏览器'}</small></span>
             <div className="wb-import-actions">
+              <button onClick={()=>setShowDraftBackups(true)} aria-label="草稿备份">草稿备份</button>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1383,24 +1435,6 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
                     catch{throw Error('本机保存失败，正文中的图片未替换，请先导出文章。');}
                     setUndoSnapshot(snapshot);setMarkdown(next);
                   }}/>
-                  <StyleSchemeControl
-                    activeSchemeId={activeStyleScheme?.id}
-                    customSchemes={customStyleSchemes}
-                    editingSchemeId={editingSchemeId}
-                    editingDirty={editingDirty}
-                    onApply={handleApplyStyleScheme}
-                    onCreate={handleCreateCustomStyleScheme}
-                    onEdit={handleEditCustomStyleScheme}
-                    onEditFeatured={handleEditFeaturedStyleScheme}
-                    onDuplicate={handleDuplicateStyleScheme}
-                    onDelete={handleDeleteCustomStyleScheme}
-                    onMove={handleMoveCustomStyleScheme}
-                    onSaveEditing={handleSaveEditingStyleScheme}
-                    onSaveAs={handleSaveAsStyleScheme}
-                    onResetEditing={handleResetEditingStyleScheme}
-                    onImport={handleImportCustomStyleSchemes}
-                    onExport={handleExportCustomStyleSchemes}
-                  />
                   <TypographyControl
                     value={activeTypography}
                     emphasisValue={activeEmphasis}
@@ -1448,7 +1482,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
             </div>
           ) : (
             <div className="flex-1 overflow-hidden">
-              <PlatformExportPanel
+              <LazyTool onClose={() => setPreviewTab('wechat')}><PlatformExportPanel
                 threadExport={xThreadExport}
                 articleExport={xArticleExport}
                 activePlatform={previewTab}
@@ -1488,7 +1522,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
                     `第 ${index} 段 ${language || 'text'} 代码已复制，可直接粘贴到 X 的“插入代码”块。`,
                   );
                 }}
-              />
+              /></LazyTool>
             </div>
           )}
         </section>
@@ -1744,7 +1778,8 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
         </div>
       )}
 
-      {showCheatsheet && <CheatsheetModal onClose={() => setShowCheatsheet(false)} />}
+      {showDraftBackups && <LazyTool onClose={()=>setShowDraftBackups(false)}><DraftBackupsPanel owner={draftOwner} getCurrent={()=>latestMarkdown.current} onRestore={(next,undo)=>{setMarkdown(next);setUndoSnapshot(undo);notifyArticleIdentity();}} onClose={()=>setShowDraftBackups(false)}/></LazyTool>}
+      {showCheatsheet && <LazyTool onClose={() => setShowCheatsheet(false)}><CheatsheetModal onClose={() => setShowCheatsheet(false)} /></LazyTool>}
       {showFormatPreferences && (
         <FormatPreferenceModal
           value={formatPreferences}
@@ -1800,36 +1835,36 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
         />
       )}
       {illustrationPlan && (
-        <IllustrationPlanModal
+        <LazyTool onClose={handleCloseIllustrationPlan}><IllustrationPlanModal
           plan={illustrationPlan}
           selectedIds={selectedIllustrationIds}
           isSubmitting={isApplyingIllustration}
           onToggle={handleToggleIllustrationItem}
           onConfirm={handleApplyIllustrationPlan}
           onClose={handleCloseIllustrationPlan}
-        />
+        /></LazyTool>
       )}
       {lastIllustrationJob && (
-        <IllustrationJobPanel
+        <LazyTool onClose={() => setLastIllustrationJob(null)}><IllustrationJobPanel
           job={lastIllustrationJob}
           onRefresh={import.meta.env.VITE_APP_MODE === 'online' && !lastIllustrationJob.id.startsWith('oss-') ? handleRefreshIllustrationJob : undefined}
           onApply={handleApplyIllustrationResult}
           isApplying={isApplyingIllustrationResult}
           onClose={() => setLastIllustrationJob(null)}
-        />
+        /></LazyTool>
       )}
       {showImageExportPanel && (
-        <ImageExportPanel
+        <LazyTool onClose={() => setShowImageExportPanel(false)}><ImageExportPanel
           elementId="wechat-article-preview"
           markdown={markdown}
           onClose={() => setShowImageExportPanel(false)}
-        />
+        /></LazyTool>
       )}
-      <FeishuSidebar
+      {accountsEnabled && showFeishuSidebar && <LazyTool onClose={() => setShowFeishuSidebar(false)}><FeishuSidebar
         open={showFeishuSidebar}
         onClose={() => setShowFeishuSidebar(false)}
         onImport={(title, md) => handleExternalImport(title, md, 'feishu')}
-      />
+      /></LazyTool>}
     </div>
   );
 }
