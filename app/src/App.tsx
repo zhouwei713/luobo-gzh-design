@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 import {lazy,Suspense} from 'react';
 import TypesetterView from './views/TypesetterView';
 import LoginView from './views/LoginView';
@@ -6,19 +6,30 @@ import AccountView from './views/AccountView';
 import PlannedFeatureView from './views/PlannedFeatureView';
 import FeishuCallbackView from './views/FeishuCallbackView';
 import {accountsEnabled,diagnosticsEnabled,phaseTwoEnabled} from './services/releaseScope';
-import {useDraftOwner} from './services/useDraftOwner';
+import {useDraftOwner,useTopicDraftOwner} from './services/useDraftOwner';
+import {readTopicDraft,topicDraftScope} from './services/topicDraft';
 
 const VideoCompareView = lazy(() => import('./views/VideoCompareView'));
 const ResearchView = phaseTwoEnabled ? lazy(() => import('./features/discovery/ResearchView')) : null;
 const ArticlesView = phaseTwoEnabled ? lazy(() => import('./features/articles/ArticlesView')) : null;
 const AdminView = diagnosticsEnabled ? lazy(() => import('./views/AdminView')) : null;
 
+function TypesetterRoute({owner}:{owner:string}){
+  const [params]=useSearchParams();
+  const topicOwner=useTopicDraftOwner();
+  const topicId=phaseTwoEnabled?params.get('topic'):null;
+  const topic=topicId?readTopicDraft(localStorage,topicOwner,topicId):null;
+  if(topicId&&!topic)return <Navigate to="/" replace />;
+  const scope=topic?topicDraftScope(topicOwner,topic.id):owner;
+  return <TypesetterView key={scope} draftOwner={scope} accountOwner={owner} topicDraft={topic}/>;
+}
+
 export default function App() {
   const owner=useDraftOwner();
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<TypesetterView key={owner} draftOwner={owner}/>} />
+        <Route path="/" element={<TypesetterRoute owner={owner}/>} />
         {ResearchView && <>
           <Route path="/discovery" element={<Suspense fallback={null}><ResearchView key={owner} mode="discovery" /></Suspense>} />
           <Route path="/topics" element={<Suspense fallback={null}><ResearchView key={owner} mode="topics" /></Suspense>} />

@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS discovery_articles (
 );
 CREATE INDEX IF NOT EXISTS discovery_published ON discovery_articles(published_at DESC,id);
 CREATE INDEX IF NOT EXISTS discovery_reads ON discovery_articles(read_count DESC,id);
+CREATE INDEX IF NOT EXISTS discovery_article_url ON discovery_articles(json_extract(data_json,'$.url'));
 CREATE TABLE IF NOT EXISTS discovery_memberships (
  article_id TEXT NOT NULL REFERENCES discovery_articles(id), category TEXT NOT NULL, source TEXT NOT NULL,
  PRIMARY KEY(article_id,category,source)
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS topics (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), title TEXT NOT NULL,
  angle TEXT NOT NULL DEFAULT '', audience TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
  status TEXT NOT NULL DEFAULT 'research', revision INTEGER NOT NULL DEFAULT 0,
+ tags_json TEXT NOT NULL DEFAULT '[]',
  current_brief TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS topics_owner ON topics(user_id,updated_at DESC);
@@ -37,8 +39,8 @@ CREATE TABLE IF NOT EXISTS topic_sources (
  topic_id TEXT NOT NULL REFERENCES topics(id), article_id TEXT NOT NULL REFERENCES discovery_articles(id),
  PRIMARY KEY(topic_id,article_id)
 );
+CREATE INDEX IF NOT EXISTS topic_sources_article ON topic_sources(article_id,topic_id);
 CREATE TABLE IF NOT EXISTS topic_briefs (
  id TEXT PRIMARY KEY, topic_id TEXT NOT NULL REFERENCES topics(id), markdown TEXT NOT NULL,
  kind TEXT NOT NULL, model TEXT, input_json TEXT, created_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS topic_brief_usage (user_id TEXT NOT NULL,day TEXT NOT NULL,count INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(user_id,day));

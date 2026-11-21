@@ -30,6 +30,15 @@ try{
  await page.screenshot({path:join(out,'editor-save-entry.png')});await click('保存文章');await page.waitForSelector('#saved-article-title');await page.setViewport({width:390,height:900});await page.screenshot({path:join(out,'save-dialog-mobile.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await click('取消');await page.setViewport({width:1440,height:1000});
  article=(await api('/api/articles/'+article.id,a.token)).data.article;await api('/api/articles/'+article.id,a.token,{title:'其他设备的新版',revision:article.revision},'PATCH');await click('保存文章');await page.waitForSelector('#saved-article-title');await click('更新文章');await page.waitForFunction(()=>document.querySelector('dialog')?.textContent.includes('其他页面更新'));assert.equal(await page.$eval('textarea[aria-label="Markdown 正文"]',e=>e.value),'# 更新后的文章正文');await page.click('.article-checkbox input');await click('保存新文章');await page.waitForFunction(()=>!document.querySelector('#saved-article-title'));assert.equal((await api('/api/articles',a.token)).data.total,2);
  await page.goto(base+'/articles',{waitUntil:'networkidle0'});await page.waitForSelector('.saved-article');await page.screenshot({path:join(out,'articles-desktop.png')});
+ await page.click('.wb-sidebar button[aria-label="工作台设置"]');
+ await page.waitForSelector('dialog[open] #personal-ai-model');
+ const savedModel=await page.$eval('#personal-ai-model',element=>element.value);
+ await fill('#personal-ai-model','unsaved-settings-fixture');
+ await click('取消');
+ await page.waitForSelector('dialog[open]',{hidden:true});
+ await page.click('.wb-sidebar button[aria-label="工作台设置"]');
+ assert.equal(await page.$eval('#personal-ai-model',element=>element.value),savedModel);
+ await page.click('dialog[open] button[aria-label="关闭工作台设置"]');
  await fill('#article-search','其他设备');await click('搜索');await page.waitForFunction(()=>document.querySelectorAll('.saved-article').length===1);await click('重命名');await page.waitForSelector('#article-rename');await fill('#article-rename','重新命名后的文章');await click('保存标题');await page.waitForFunction(()=>!document.querySelector('#article-rename'));await fill('#article-search','重新命名');await click('搜索');await page.waitForFunction(()=>document.querySelector('.saved-article')?.textContent.includes('重新命名后的文章'));
  await page.setViewport({width:390,height:900});await page.evaluate(()=>localStorage.setItem('gzh_ui_skin','dark'));await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.saved-article');await page.screenshot({path:join(out,'articles-mobile-dark.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await click('删除');await page.waitForSelector('dialog[aria-label="删除文章"]');await click('取消');assert.equal((await api('/api/articles',a.token)).data.total,2);await click('删除');await click('确认删除');await page.waitForFunction(()=>!document.querySelector('dialog'));assert.equal((await api('/api/articles',a.token)).data.total,1);

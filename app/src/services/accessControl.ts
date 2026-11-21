@@ -1,5 +1,6 @@
 import { getCurrentUser, type User } from './authService';
 import { isLocalOssDevelopment } from './localDevelopment';
+import {notifyDraftOwnerChanged} from './draftScope';
 
 export type ControlMode = 'mock' | 'real' | 'off';
 export type DevIdentityRole = 'guest' | User['role'];
@@ -10,7 +11,7 @@ export interface FeatureAccess {
   message: string;
 }
 
-const DEV_IDENTITY_ROLE_KEY = 'dev_identity_role';
+export const DEV_IDENTITY_ROLE_KEY = 'dev_identity_role';
 
 const DEV_IDENTITY_OPTIONS: Array<{ label: string; value: DevIdentityRole }> = [
   { label: '未登录', value: 'guest' },
@@ -49,6 +50,7 @@ export function loadDevIdentityRole(): DevIdentityRole {
 
 export function saveDevIdentityRole(role: DevIdentityRole): void {
   localStorage.setItem(DEV_IDENTITY_ROLE_KEY, normalizeRole(role, getDefaultDevIdentityRole()));
+  notifyDraftOwnerChanged();
 }
 
 export function getDevIdentityOptions(): Array<{ label: string; value: DevIdentityRole }> {

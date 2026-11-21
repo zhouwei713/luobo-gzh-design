@@ -7,3 +7,12 @@
 .rf-modal-body{padding:25px 28px;font-size:13px;line-height:1.9}
 [data-app-skin="dark"] .rf-modal{--rf-line:#304637;--rf-paper:#19261e;--rf-muted:#9aaf9f;--rf-ink:#d5e3d8;--rf-soft:#213529}
 @media(max-width:560px){.rf-modal>header{padding:18px}.rf-modal header h2{font-size:18px}.rf-modal-body{padding:20px 18px}}
+.rf-modal.wb-confirmation{width:420px}
+.wb-confirmation>header{padding:16px 22px}
+.wb-confirmation>header h2{margin:0;font-size:17px}
+.wb-confirmation-body{padding:18px 22px 22px;font-size:14px;line-height:1.65}
+.wb-confirmation-body p{margin:0;overflow-wrap:anywhere}
+.wb-confirmation-body footer{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:20px}
+.wb-confirmation-body button{min-height:38px;border:1px solid var(--rf-line);border-radius:8px;padding:6px 14px;background:var(--rf-soft);color:var(--rf-ink)}
+.wb-confirmation-body .wb-confirmation-primary{border-color:#08765b;background:#08765b;color:white}
+.wb-confirmation-body button:focus-visible{outline:2px solid #269e7a;outline-offset:2px}

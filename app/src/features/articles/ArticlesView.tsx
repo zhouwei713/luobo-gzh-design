@@ -2,7 +2,7 @@ import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {Link,useNavigate} from 'react-router-dom';
 import {FileText,Search} from 'lucide-react';
 import {WorkbenchShell} from '../../components/workbench/WorkbenchShell';
-import {UiSkinControl} from '../../components/workbench/UiSkinControl';
+import {WorkbenchSettings} from '../../components/workbench/WorkbenchSettings';
 import {Modal} from '../../components/ui/WorkspaceModal';
 import {getCurrentUser,logout} from '../../services/authService';
 import {articleApi,ArticleError,type ArticlePage} from './api';
@@ -32,6 +32,6 @@ export default function ArticlesView(){
    </>}
   </main>
   {editing&&<Modal title={editing.action==='rename'?'重命名文章':'删除文章'} onClose={()=>{if(!busy){setEditing(null);setError('');}}}><form className="article-dialog" onSubmit={e=>void mutate(e)}>{editing.action==='rename'?<><label htmlFor="article-rename">文章标题</label><input id="article-rename" required maxLength={200} value={title} onChange={e=>setTitle(e.target.value)}/></>:<p>确定删除“{editing.item.title}”？服务器文章将永久删除，当前浏览器里的编辑草稿保留。</p>}{error&&<p className="article-error" role="alert">{error}</p>}<footer><button type="button" disabled={busy} onClick={()=>{setEditing(null);setError('');}}>取消</button><button className="article-primary" disabled={busy} type="submit">{busy?'正在处理…':editing.action==='rename'?'保存标题':'确认删除'}</button></footer></form></Modal>}
-  {settings&&<Modal title="工作台设置" onClose={()=>setSettings(false)}><div className="article-dialog"><UiSkinControl/></div></Modal>}
+  {settings&&<WorkbenchSettings onClose={()=>setSettings(false)}/>}
  </WorkbenchShell>;
 }

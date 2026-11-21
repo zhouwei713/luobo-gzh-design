@@ -1,4 +1,5 @@
 import { ossChatCompletion, resolveChatEndpoint } from './chatCompletion';
+import { readPersonalAI } from '../services/personalAISettings';
 import { XHS_THEME_PACKS } from '../components/ui/XhsCard';
 import { XHS_STICKER_THEMES } from '../components/ui/XhsStickerCard';
 import { XHS_MINIMAL_THEMES } from '../components/ui/XhsMinimalCard';
@@ -334,10 +335,7 @@ export const parseXhsDeck = (content: string, markdown = ''): XhsDeck => {
 
 // 一次调用 + 一次解析。解析失败/卡片过少时会由外层 generateXhsCards 再重试一次。
 const requestAndParse = async (markdown: string): Promise<XhsDeck> => {
-  const baseUrl = localStorage.getItem('openai_api_base') || '';
-  const model = localStorage.getItem('openai_model') || '';
-
-  const apiKey = localStorage.getItem('openai_api_key') || '';
+  const {apiKey,baseUrl,model} = readPersonalAI();
   if (!apiKey) {
     throw new Error('需要先在设置中配置 API Key，才能使用 AI 图文生成。');
   }

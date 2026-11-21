@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeArticle, metric, fetchRank, categories } from '../discovery/provider.mjs';
+import { normalizeArticle, metric, fetchRank, fetchKeyword, categories } from '../discovery/provider.mjs';
 
 test('RedFox keeps lower bounds, stable identity and source text', () => {
   assert.deepEqual(metric('10w+'), { value: 100000, exact: false, raw: '10w+' });
@@ -14,6 +14,23 @@ test('RedFox keeps lower bounds, stable identity and source text', () => {
   assert.equal(article.content, '<p>原文</p>');
   assert.throws(() => normalizeArticle({ photoId: 'x', title: 'x', oriUrl: 'javascript:alert(1)' }, '科技数码'));
   assert.ok(categories.includes('总排名'));
+});
+
+test('keyword collection uses separate bounded first-page requests for the two RedFox catalogs',async()=>{
+  const config={REDFOX_API_KEY:'fixture-only'};
+  for(const [source,path] of [['keywordPremium','gzhData'],['keywordWide','gzh/data']]){
+    let calls=0;
+    const result=await fetchKeyword({source,keyword:' AI 工具 ',exactMatch:true},config,async(url,init)=>{
+      calls++;
+      assert.equal(url,`https://redfox.hk/story/api/${path}/searchArticle`);
+      assert.equal(init.redirect,'error');
+      assert.deepEqual(JSON.parse(init.body),{keyword:'AI 工具',offset:0,exactMatch:true});
+      return Response.json({code:2000,data:{records:[]}});
+    });
+    assert.deepEqual(result,[]);
+    assert.equal(calls,1);
+  }
+  await assert.rejects(fetchKeyword({source:'keywordWide',keyword:' '},config,()=>assert.fail('Invalid input must not make a request')),/关键词/);
 });
 
 test('provider uses header auth, bounds request and never silently retries', async () => {

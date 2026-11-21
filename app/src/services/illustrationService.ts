@@ -1,5 +1,6 @@
 import { getAuthToken } from './authService';
 import { loadR2Config } from './imageUpload';
+import { readPersonalAI } from './personalAISettings';
 import { resolveChatEndpoint } from '../ai/chatCompletion';
 import {
   createOssIllustrationTraceId,
@@ -123,10 +124,11 @@ function getWorkerUrl(): string {
 }
 
 function getLocalAiConfig(): { apiKey: string; baseUrl: string; model: string } {
+  const {apiKey,baseUrl,model} = readPersonalAI();
   return {
-    apiKey: (localStorage.getItem('openai_api_key') || '').trim(),
-    baseUrl: (localStorage.getItem('openai_api_base') || 'https://api.openai.com/v1').trim() || 'https://api.openai.com/v1',
-    model: (localStorage.getItem('openai_model') || 'gpt-4o').trim() || 'gpt-4o',
+    apiKey: apiKey.trim(),
+    baseUrl: baseUrl.trim() || 'https://api.openai.com/v1',
+    model: model.trim() || 'gpt-4o',
   };
 }
 
@@ -161,9 +163,15 @@ function extractSections(markdown: string): Array<{ heading: string; index: numb
   const lines = markdown.split(/\r?\n/);
   const sections: Array<{ heading: string; index: number; content: string }> = [];
   let current: { heading: string; index: number; content: string[] } | null = null;
+  let fence='';
 
   for (const [index, line] of lines.entries()) {
-    const match = line.match(/^(#{1,3})\s+(.*)$/);
+    const marker=line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    const match = !fence&&!marker?line.match(/^(#{1,3})\s+(.*)$/):null;
+    if(marker){
+      if(!fence)fence=marker[1];
+      else if(marker[1][0]===fence[0]&&marker[1].length>=fence.length&&!marker[2].trim())fence='';
+    }
     if (match) {
       if (current) {
         sections.push({

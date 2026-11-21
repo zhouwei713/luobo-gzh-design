@@ -1,3 +1,5 @@
+import {useState} from 'react';
+import {WorkbenchSettings} from '../components/workbench/WorkbenchSettings';
 import {Link,useNavigate} from 'react-router-dom';
 import {Clock3} from 'lucide-react';
 import {WorkbenchShell} from '../components/workbench/WorkbenchShell';
@@ -13,8 +15,10 @@ const features={
 };
 
 export default function PlannedFeatureView({feature}:{feature:keyof typeof features}){
+ const [settings,setSettings]=useState(false);
  const navigate=useNavigate(),user=getCurrentUser(),item=features[feature];
- return <WorkbenchShell section={feature} toolbar={null} actions={null} userName={user?.email} realAuth={usesRealAuth()} draftState="saved" onLogin={()=>navigate('/login')} onLogout={()=>{void logout().then(()=>navigate('/'));}} onSettings={()=>navigate('/?settings=1')} onConsole={()=>navigate('/admin')} onHelp={()=>navigate('/')} onVideo={()=>navigate('/video-compare')}>
+ return <WorkbenchShell section={feature} toolbar={null} actions={null} userName={user?.email} realAuth={usesRealAuth()} draftState="saved" onLogin={()=>navigate('/login')} onLogout={()=>{void logout().then(()=>navigate('/'));}} onSettings={()=>setSettings(true)} onConsole={()=>navigate('/admin')} onHelp={()=>navigate('/')} onVideo={()=>navigate('/video-compare')}>
   <section className="wb-planned" aria-label={`${item.title}规划`}><Clock3 size={32}/><span className="wb-planned-status">后续实现</span><h2>{item.title}，敬请期待</h2><p>{item.description}</p><Link to="/">继续文章排版</Link></section>
+  {settings&&<WorkbenchSettings onClose={()=>setSettings(false)}/>}
  </WorkbenchShell>;
 }

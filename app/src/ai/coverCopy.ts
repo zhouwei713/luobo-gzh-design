@@ -1,4 +1,5 @@
 import { ossChatCompletion, resolveChatEndpoint } from './chatCompletion';
+import { readPersonalAI } from '../services/personalAISettings';
 import { COVER_COLORS } from '../components/ui/CoverTemplate';
 import type { CoverTemplateId } from '../components/ui/CoverTemplate';
 
@@ -70,10 +71,7 @@ export const generateCoverCopy = async (markdown: string): Promise<CoverCopyProp
     throw new Error('正文为空，无法生成封面方案。');
   }
 
-  const baseUrl = localStorage.getItem('openai_api_base') || '';
-  const model = localStorage.getItem('openai_model') || '';
-
-  const apiKey = localStorage.getItem('openai_api_key') || '';
+  const {apiKey,baseUrl,model} = readPersonalAI();
   if (!apiKey) {
     throw new Error('需要先在设置中配置 API Key，才能使用 AI 封面方案。');
   }

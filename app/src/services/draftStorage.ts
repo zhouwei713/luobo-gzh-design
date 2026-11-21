@@ -10,6 +10,7 @@ export interface UndoSnapshot {
   markdown: string;
   savedAt: number;
   article?: ArticleIdentity|null;
+  topicImport?: { briefId: string; receipt: string | null };
 }
 
 export function loadDraft(owner=getDraftOwner()): string | null {

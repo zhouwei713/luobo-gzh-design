@@ -31,6 +31,11 @@ test('persistent library, zero read-through, bounded admin sync and isolated top
   assert.equal((await api('/api/discovery/articles?q=%25',first.token)).data.items.length,0);
   assert.equal((await api('/api/discovery/articles?cursor=garbage',first.token)).status,400);assert.equal(calls,1);
   const topic=(await api('/api/topics',first.token,{articleId:id})).data.topic;
+  assert.equal((await api('/api/discovery/articles?content=present',first.token)).data.items[0].savedTopicId,topic.id);
+  assert.equal((await api('/api/discovery/articles/'+id,first.token)).data.article.savedTopicId,topic.id);
+  assert.equal((await api('/api/discovery/articles?content=present',other.token)).data.items[0].savedTopicId,null);
+  assert.equal((await api('/api/discovery/articles/'+id,other.token)).data.article.savedTopicId,null);
+  assert.equal((await api('/api/discovery/articles?content=invalid',first.token)).status,400);
   assert.equal((await api('/api/topics',first.token,{articleId:id})).data.topic.id,topic.id);
   const manual=(await api('/api/topics',first.token,{title:'额外参考'})).data.topic;
   assert.equal((await api('/api/topics/'+manual.id+'/sources',first.token,{articleId:id,revision:manual.revision})).status,200);
@@ -45,10 +50,23 @@ test('persistent library, zero read-through, bounded admin sync and isolated top
   assert.equal((await api('/api/topics/'+topic.id,first.token,{title:'stale',revision:topic.revision},'PATCH')).status,409);
   const brief=await api('/api/topics/'+topic.id+'/briefs',first.token,{markdown:'# 原创简报\n\n自己的角度',revision:saved.data.topic.revision});
   assert.equal(brief.status,201);assert.match(brief.data.brief.markdown,/自己的角度/);
-  assert.equal((await api('/api/topics/'+topic.id+'/briefs/generate',first.token,{revision:brief.data.topic.revision})).status,503);
+  const historyPath='/api/topics/'+topic.id+'/briefs';
+  const history=await api(historyPath,first.token);
+  assert.equal(history.data.versions[0].id,brief.data.brief.id);
+  assert.equal(Object.hasOwn(history.data.versions[0],'markdown'),false);
+  assert.equal((await api(historyPath,other.token)).status,404);
+  assert.equal((await api(historyPath+'?version='+brief.data.brief.id,other.token)).status,404);
+  assert.equal((await api(historyPath+'?version='+brief.data.brief.id,first.token)).data.brief.markdown,brief.data.brief.markdown);
+  assert.equal((await api(historyPath+'/generate',first.token,{revision:brief.data.topic.revision})).status,404);
+  const personal={markdown:'# 个人 API 简报',model:'personal-model',revision:brief.data.topic.revision};
+  assert.equal((await api(historyPath,other.token,personal)).status,404);
+  const generated=await api(historyPath,first.token,personal);
+  assert.equal(generated.status,201);
+  assert.equal(generated.data.brief.kind,'model');assert.equal(generated.data.brief.model,personal.model);
+  assert.equal((await api(historyPath,first.token,personal)).status,409);
   await stop();await start();
   assert.equal((await api('/api/discovery/articles',first.token)).data.items.length,1);
-  assert.equal((await api('/api/topics/'+topic.id,first.token)).data.brief.markdown,brief.data.brief.markdown);assert.equal(calls,1);
+  assert.equal((await api('/api/topics/'+topic.id,first.token)).data.brief.markdown,personal.markdown);assert.equal(calls,1);
   fixture.content='';
   for(let n=0;n<2;n++){
    const r=await api('/api/discovery/sync',first.token,jobInput);

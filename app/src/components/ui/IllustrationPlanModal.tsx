@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 
-import type { IllustrationPlan } from '../../services/illustrationService';
+import type { IllustrationPlan,IllustrationPlanItem } from '../../services/illustrationService';
 
 interface IllustrationPlanModalProps {
   plan: IllustrationPlan;
@@ -9,10 +9,12 @@ interface IllustrationPlanModalProps {
   onToggle: (id: string) => void;
   onConfirm: () => void;
   onClose: () => void;
+  onGeneratePicture:(item:IllustrationPlanItem)=>void;
+  onGenerateAtEnd:()=>void;
 }
 
 function engineLabel(engine: string): string {
-  return engine === 'html_infographic' ? 'HTML 信息图' : 'HTTP 生图';
+  return engine === 'html_infographic' ? 'HTML 信息图' : '支持生图';
 }
 
 function typeLabel(type: string): string {
@@ -42,6 +44,8 @@ export function IllustrationPlanModal({
   onToggle,
   onConfirm,
   onClose,
+  onGeneratePicture,
+  onGenerateAtEnd,
 }: IllustrationPlanModalProps) {
   const selectedCount = plan.items.filter((item) => selectedIds.includes(item.id)).length;
 
@@ -50,9 +54,9 @@ export function IllustrationPlanModal({
       <div data-ui-surface className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">智能配图建议</h2>
+            <h2 className="text-lg font-bold text-gray-900">AI 配图</h2>
             <p className="mt-1 text-sm text-gray-500">
-              确认后会直接合入文章。信息图会走结构化信息图，场景图若未配置生图引擎或生成失败，会自动回退为信息图形式。
+              选择插入位置。场景插图可选择画风，生成后再确认插入。流程图、对比图可用信息图版式。
             </p>
           </div>
           <button
@@ -64,7 +68,7 @@ export function IllustrationPlanModal({
           </button>
         </div>
 
-        <div className="grid gap-4 border-b border-gray-100 bg-gray-50 px-6 py-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 border-b border-gray-100 bg-gray-50 px-6 py-4 sm:grid-cols-4">
           <div>
             <div className="text-xs uppercase tracking-wide text-gray-400">建议数量</div>
             <div className="mt-1 text-xl font-semibold text-gray-900">{plan.recommendedCount}</div>
@@ -98,7 +102,7 @@ export function IllustrationPlanModal({
               const selected = selectedIds.includes(item.id);
 
               return (
-                <label
+                <article
                   key={item.id}
                   className={`block rounded-2xl border bg-white p-5 transition-all ${
                     selected ? 'border-emerald-300 shadow-sm' : 'border-gray-100'
@@ -107,6 +111,7 @@ export function IllustrationPlanModal({
                   <div className="flex items-start gap-4">
                     <input
                       type="checkbox"
+                      aria-label={`选中配图建议 ${item.anchorLabel}`}
                       checked={selected}
                       onChange={() => onToggle(item.id)}
                       className="mt-1 h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
@@ -148,19 +153,21 @@ export function IllustrationPlanModal({
                         <div className="text-xs uppercase tracking-wide text-gray-400">建议 alt 文案</div>
                         <div className="mt-1 text-sm leading-6 text-gray-700">{item.alt}</div>
                       </div>
+                      {item.engine!=='html_infographic'&&<button type="button" disabled={isSubmitting} className="mt-3 rounded-lg border border-emerald-300 px-3 py-2 text-sm text-emerald-700" onClick={()=>onGeneratePicture(item)}>生成场景插图</button>}
                     </div>
                   </div>
-                </label>
+                </article>
               );
             })
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-gray-100 bg-white px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-white px-6 py-4">
           <div className="text-sm text-gray-500">
-            当前使用浏览器生成信息图；配置个人 API 后会尝试整理配图内容，场景图暂回退为信息图。
+            场景插图可单独生图和预览。下方批量按钮按现有信息图方式生成。
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="button" onClick={onGenerateAtEnd} disabled={isSubmitting} className="rounded-xl border border-emerald-300 px-3 py-2 text-sm text-emerald-700">在文末生成插图</button>
             <button
               onClick={onClose}
               className="rounded-xl px-4 py-2.5 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"

@@ -2,8 +2,7 @@ import {useCallback,useEffect,useState,type FormEvent} from 'react';
 import {Link,useNavigate} from 'react-router-dom';
 import {ArrowUpRight,Check,KeyRound,LogOut,ShieldCheck,UserRound} from 'lucide-react';
 import {WorkbenchShell} from '../components/workbench/WorkbenchShell';
-import {UiSkinControl} from '../components/workbench/UiSkinControl';
-import {Modal} from '../components/ui/WorkspaceModal';
+import {WorkbenchSettings} from '../components/workbench/WorkbenchSettings';
 import {phaseTwoEnabled} from '../services/releaseScope';
 import {changePassword,logout,refreshUser,type User} from '../services/authService';
 import './account.css';
@@ -27,6 +26,6 @@ export default function AccountView(){
     <section className="account-panel account-profile"><span className="account-kicker">YOUR ACCOUNT</span><div className="account-profile-heading"><span className="account-avatar"><UserRound size={25}/></span><div><h2>个人信息</h2><p>{roles[user.role]}</p></div></div><dl><div><dt>邮箱账号</dt><dd>{user.email}</dd></div><div><dt>账号类型</dt><dd>{roles[user.role]}</dd></div><div><dt>注册时间</dt><dd>{createdText(user.created_at)}</dd></div></dl><div className="account-shortcuts"><Link to={phaseTwoEnabled?'/topics':'/articles'}>{phaseTwoEnabled?'我的选题':'我的文章'}<ArrowUpRight size={14}/></Link><Link to="/">回到文章排版<ArrowUpRight size={14}/></Link></div><p className="account-muted">账号功能仍在完善，文章管理后续开放；当前正文草稿保存在本浏览器。</p><button className="account-button account-signout" aria-label="退出登录" disabled={busy} onClick={()=>void signOut()}><LogOut size={15}/>退出登录</button></section>
     <section className="account-panel"><span className="account-kicker">ACCOUNT SECURITY</span><h2 className="account-security-heading"><KeyRound size={20}/>修改密码</h2><p className="account-muted">设置至少8位、包含字母和数字的密码。</p><form className="account-password-form" onSubmit={savePassword}><label htmlFor="account-current-password">当前密码</label><input id="account-current-password" type="password" required autoComplete="current-password" value={oldPassword} disabled={busy} onChange={e=>setOldPassword(e.target.value)}/><label htmlFor="account-new-password">新密码</label><input id="account-new-password" type="password" required minLength={8} autoComplete="new-password" value={newPassword} disabled={busy} onChange={e=>setNewPassword(e.target.value)}/><label htmlFor="account-confirm-password">确认新密码</label><input id="account-confirm-password" type="password" required minLength={8} autoComplete="new-password" value={confirm} disabled={busy} onChange={e=>setConfirm(e.target.value)}/><button className="account-password-submit" type="submit" disabled={busy}>{busy?'正在保存…':'更新密码'}</button></form><p className="account-muted account-security-note"><ShieldCheck size={15}/>修改后其他设备需重新登录，当前会话继续保留。</p></section>
    </div>}
-  </main>{settings&&<Modal title="工作台设置" onClose={()=>setSettings(false)}><div className="rf-modal-body"><UiSkinControl/></div></Modal>}
+  </main>{settings&&<WorkbenchSettings onClose={()=>setSettings(false)}/>}
  </WorkbenchShell>;
 }

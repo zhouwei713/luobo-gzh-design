@@ -15,3 +15,10 @@ test('safe emphasis gradients and double underlines survive filtering',()=>{
  const band=parseMarkdownToJSON('**重点**',undefined,undefined,{styleId:'light-band',color:'#059669'});assert.match(band[0].content,/linear-gradient/);
  const classic=parseMarkdownToJSON('**重点**',undefined,{id:'classic'});assert.match(classic[0].content,/double/);
 });
+test('code inside a scroll card uses visible line breaks and preserves indentation',()=>{
+ const [card]=parseMarkdownToJSON('<ScrollCard title="员工档案示例" hint="滑动查看">\n```markdown\n## 我是谁\n\n  const a = "<b>";\n最后一行\n```\n</ScrollCard>');
+ assert.equal(card.type,'scroll_card');
+ assert.doesNotMatch(card.content,/<pre\b/);
+ assert.match(card.content,/## 我是谁<br\s*\/?>\s*<br\s*\/?>\s*(?:&nbsp;|\u00a0){2}const a = "&lt;b&gt;";<br\s*\/?>最后一行/);
+ assert.match(card.content,/word-break\s*:\s*break-all/);
+});

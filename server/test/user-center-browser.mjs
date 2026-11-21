@@ -5,12 +5,13 @@ import {join,resolve} from 'node:path';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer-core';
 import {createApplication} from '../application.mjs';
+import {createPhaseTwoFrontend} from './phase-two-frontend.mjs';
 const root=resolve(import.meta.dirname,'../..'),out=join(root,'output/user-center'),dir=await mkdtemp(join(tmpdir(),'gzh-account-'));
-let app,server,browser,base;const errors=[];
-const start=async()=>{server=createServer((req,res)=>app.handle(req,res));await new Promise(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${server.address().port}`;app=await createApplication({dataDir:dir,staticDir:join(root,'app/dist'),publicUrl:base,config:{}});};
+let frontend,app,server,browser,base;const errors=[];
+const start=async()=>{server=createServer((req,res)=>frontend.handle(req,res,app));await new Promise(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${server.address().port}`;app=await createApplication({dataDir:dir,staticDir:join(root,'app/dist'),publicUrl:base,config:{}});};
 const stop=async()=>{if(server){await new Promise(r=>server.close(r));server=null;}if(app){await app.close();app=null;}};
 try{
- await mkdir(out,{recursive:true});await start();
+ await mkdir(out,{recursive:true});frontend=await createPhaseTwoFrontend(root);await start();
  const request=async(path,body,token)=>{const r=await fetch(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json()};};
  const auth=(await request('/api/auth/register',{email:'account@example.test',password:'Original-test123'})).data;
  const second=(await request('/api/auth/login',{email:'account@example.test',password:'Original-test123'})).data.token;
@@ -24,7 +25,19 @@ try{
  await fill('#account-current-password','Original-test123');await page.click('.account-password-submit');await page.waitForFunction(()=>document.body.textContent.includes('密码已更新'));
  assert.equal((await request('/api/user/info',null,second)).status,401);assert.equal((await request('/api/user/info',null,auth.token)).status,200);
  await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.account-profile');await page.setViewport({width:390,height:1000});await page.evaluate(()=>localStorage.setItem('gzh_ui_skin','dark'));await page.reload({waitUntil:'networkidle0'});await page.waitForSelector('.account-profile');await page.screenshot({path:join(out,'account-mobile-dark.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.setViewport({width:390,height:640});
+ await page.click('.wb-mobile-settings');
+ await page.waitForSelector('dialog[open] #personal-ai-key');
+ await page.screenshot({path:join(out,'account-settings-small-screen.png')});
+ const save=(await page.evaluateHandle(()=>[...document.querySelectorAll('dialog[open] button')].find(button=>button.textContent.trim()==='保存设置'))).asElement();
+ assert.ok(save);
+ assert.equal(await page.$eval('dialog[open]',element=>element.scrollHeight>element.clientHeight),true);
+ await save.evaluate(element=>element.scrollIntoView({block:'end'}));
+ await page.screenshot({path:join(out,'account-settings-small-screen-bottom.png')});
+ await save.click();
+ await page.waitForSelector('dialog[open]',{hidden:true});
+ assert.equal(new URL(page.url()).pathname,'/account');
  await page.click('main button[aria-label="退出登录"]');await page.waitForFunction(()=>location.pathname==='/login');await page.goto(base+'/account',{waitUntil:'networkidle0'});await page.waitForFunction(()=>location.pathname==='/login');
  await stop();await start();assert.equal((await request('/api/auth/login',{email:'account@example.test',password:'Changed-test456'})).status,200);assert.equal((await request('/api/auth/login',{email:'account@example.test',password:'Original-test123'})).status,401);
  assert.deepEqual(errors,[]);const report={sidebarLogin:true,accountEntry:true,profile:true,hashedPassword:true,passwordChanged:true,otherSessionsRevoked:true,currentSessionPreserved:true,guestRedirect:true,persistedAfterRestart:true,mobileOverflow:false,pageErrors:errors,temporaryDatabase:true};await writeFile(join(out,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
-}finally{if(browser)await browser.close();await stop();await rm(dir,{recursive:true,force:true});}
+}finally{if(browser)await browser.close();await stop();if(frontend)await frontend.close();await rm(dir,{recursive:true,force:true});}

@@ -51,6 +51,14 @@ try{
     if(path==='/login')await page.screenshot({path:join(out,role+'-login-planned.png')});
     if(path==='/articles')await page.screenshot({path:join(out,role+'-articles-planned.png')});
    }
+   await page.goto(base+'/discovery',{waitUntil:'domcontentloaded'});
+   await page.waitForSelector('.wb-planned-status');
+   await page.click('.wb-sidebar button[aria-label="工作台设置"]');
+   await page.waitForSelector('dialog[open] #personal-ai-key');
+   assert.ok(await page.$('dialog[open] .api-connection-test'));
+   assert.equal(new URL(page.url()).pathname,'/discovery');
+   await page.keyboard.press('Escape');
+   await page.waitForSelector('dialog[open]',{hidden:true});
    await page.goto(base+(role==='admin'?'/account':'/login'),{waitUntil:'networkidle0'});
    if(role==='admin')await check();
    assert.match(await page.$eval('body',element=>element.textContent),/后续开放|后续实现/);

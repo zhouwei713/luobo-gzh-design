@@ -6,13 +6,43 @@ import {join} from 'node:path';
 import {openDatabase} from '../storage.mjs';
 import {createLibrary} from '../discovery/library.mjs';
 const base={source:'original',category:'科技数码',startDate:'2026-11-10',endDate:'2026-11-12'};
-async function setup(fetcher,limit='10'){
+async function setup(fetcher,limit='10',options={}){
  const dir=await mkdtemp(join(tmpdir(),'gzh-batch-')),db=openDatabase(join(dir,'db.sqlite'));
  db.exec('CREATE TABLE users(id TEXT PRIMARY KEY)');db.exec(await readFile(new URL('../discovery/schema.sql',import.meta.url),'utf8'));
- const library=createLibrary(db,{REDFOX_API_KEY:'fixture-only',REDFOX_DAILY_REQUEST_LIMIT:limit,REDFOX_SYNC_COOLDOWN_SECONDS:'0',REDFOX_BATCH_INTERVAL_MS:'0'},fetcher);
+ const library=createLibrary(db,{REDFOX_API_KEY:'fixture-only',REDFOX_DAILY_REQUEST_LIMIT:limit,REDFOX_SYNC_COOLDOWN_SECONDS:'0',REDFOX_BATCH_INTERVAL_MS:'0',...options},fetcher);
  return {db,library,async close(){await library.close();db.close();await rm(dir,{recursive:true,force:true});}};
 }
 async function finished(library,id){for(let n=0;n<150;n++){const j=(await library.status(true)).jobs.find(j=>j.id===id);if(j&&!['running','queued'].includes(j.status))return j;await new Promise(r=>setTimeout(r,10));}throw Error('job did not finish');}
+test('keyword jobs share budget, merge by article URL and leave rank coverage intact',async()=>{
+ const url='https://mp.weixin.qq.com/s?__biz=keyword&mid=1&idx=1';
+ const keyword={mode:'keyword',source:'keywordWide',keyword:'AI 工具'};
+ let calls=0;
+ const settings={REDFOX_KEYWORD_COLLECTION:'0'};
+ const ctx=await setup(async(path)=>{
+  calls++;
+  const data=path.endsWith('/searchArticle')?{list:[{workUuid:'different-id',title:'关键词结果',workUrl:url}]}:[{photoId:'rank-id',title:'榜单结果',oriUrl:url,content:'原有正文',clicksCount:'10w+'}];
+  return Response.json({code:2000,data});
+ },'2',settings);
+ try{
+  await assert.rejects(ctx.library.sync(keyword),e=>e.status===403);
+  assert.equal(calls,0);
+  const rank=await finished(ctx.library,(await ctx.library.sync(base)).jobId);
+  assert.equal(rank.status,'completed');
+  await ctx.library.close();
+  const enabled=createLibrary(ctx.db,{REDFOX_API_KEY:'fixture-only',REDFOX_KEYWORD_COLLECTION:'1',REDFOX_DAILY_REQUEST_LIMIT:'2',REDFOX_SYNC_COOLDOWN_SECONDS:'0'},async()=>{
+   calls++;
+   return Response.json({code:2000,data:{list:[{workUuid:'different-id',title:'关键词结果',workUrl:url}]}});
+  });
+  try{
+   const job=await finished(enabled,(await enabled.sync(keyword)).jobId);
+   assert.equal(job.status,'completed');assert.equal(job.new_count,0);assert.equal(job.updated_count,1);
+   const article=await enabled.article('rank-id');assert.equal(article.content,'原有正文');assert.equal(article.readCount,100000);
+   assert.equal((await enabled.list(new URLSearchParams('source=keywordWide'))).total,1);
+   const status=await enabled.status(true);assert.equal(status.used,2);assert.equal(status.coverage.length,1);assert.equal(status.coverage[0].source,'original');
+   await assert.rejects(enabled.sync(keyword),e=>e.status===429);assert.equal(calls,2);
+  }finally{await enabled.close();}
+ }finally{await ctx.close();}
+});
 test('daily backfill is bounded, sequential, deduplicated and records each day',async()=>{
  const requests=[];let inFlight=0,maxInFlight=0;
  const ctx=await setup(async(url,init)=>{requests.push(JSON.parse(init.body));maxInFlight=Math.max(maxInFlight,++inFlight);await new Promise(r=>setTimeout(r,5));inFlight--;return Response.json({code:2000,data:[{photoId:'same',title:'同一文章',oriUrl:'https://mp.weixin.qq.com/s?__biz=test',clicksCount:'10w+',type:'知识百科',commentCount:'8',content:'正文'}]});});

@@ -139,6 +139,7 @@ type ParserEnv = {
   theme?: Theme;
   layoutStyle?: LayoutStyle;
   emphasis?: EmphasisConfig;
+  scrollCard?: boolean;
 };
 
 const CUSTOM_COMPONENT_REGEX = /^<(SummaryCard|InfoCard|ScrollCard|LongImageCard|CoverCard|TocCard|AuthorCard)\b([^>]*)>([\s\S]*?)<\/\1>$/i;
@@ -216,6 +217,18 @@ function renderCodeLines(code: string): string {
     .join('<br/>');
 }
 
+// ScrollCard renders nested Markdown directly, so its fences bypass the top-level CodeBlock component.
+for (const type of ['fence', 'code_block'] as const) {
+  const renderDefault = md.renderer.rules[type]!;
+  md.renderer.rules[type] = (tokens, index, options, env: ParserEnv, renderer) => {
+    if (!env?.scrollCard) return renderDefault(tokens, index, options, env, renderer);
+    return '<section style="margin:0;padding:0;line-height:1.75;white-space:normal;word-break:break-all">'
+      + '<code style="font-family:monospace;font-size:13px;white-space:normal;word-break:break-all">'
+      + renderCodeLines(tokens[index].content)
+      + '</code></section>\n';
+  };
+}
+
 function renderInlineLines(content: string, env: ParserEnv): string {
   return content
     .split(/\r?\n/)
@@ -266,7 +279,7 @@ function parseCustomComponent(content: string, env: ParserEnv): BlockComponent |
     const heightMatch = rawAttrs.match(HEIGHT_ATTR_REGEX);
     const rawHeight = (heightMatch?.[1] ?? heightMatch?.[2] ?? '').trim().replace(/px$/i, '');
     const parsedHeight = Number(rawHeight);
-    const height = Number.isFinite(parsedHeight)
+    const height = rawHeight && Number.isFinite(parsedHeight)
       ? Math.min(360, Math.max(140, Math.round(parsedHeight)))
       : DEFAULT_SCROLL_CARD_HEIGHT;
     const copyMatch = rawAttrs.match(COPY_ATTR_REGEX);
@@ -281,7 +294,7 @@ function parseCustomComponent(content: string, env: ParserEnv): BlockComponent |
     return {
       id: Math.random().toString(36).substring(7),
       type: 'scroll_card',
-      content: md.render(body, env),
+      content: md.render(body, { ...env, scrollCard: true }),
       metadata: { title, height, copyMode, hint },
     };
   }

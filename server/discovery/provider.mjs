@@ -1,5 +1,15 @@
 export const categories = ['总排名','人文资讯','知识百科','健康养生','时尚潮流','乐活生活','旅游出行','搞笑幽默','情感心理','体育娱乐','美容美体','文摘精选','财富理财','科技数码','创投商业','汽车交通','房产楼市','职场发展','教育考试','学术研究','企业品牌'];
 export const sources = { tenw: '/story/api/cozeSkill/getTenWReadingRank', original: '/story/api/cozeSkill/getOriginalRank' };
+export const keywordSources = { keywordPremium:'/story/api/gzhData/searchArticle',keywordWide:'/story/api/gzh/data/searchArticle' };
+export const keywordCategory='关键词采集';
+
+export function validateKeyword(input){
+  const keyword=typeof input.keyword==='string'?input.keyword.trim():'';
+  if(!Object.hasOwn(keywordSources,input.source))throw new Error('请选择关键词数据源');
+  if(!keyword||keyword.length>100)throw new Error('关键词长度须为1至100字');
+  if(input.exactMatch!==undefined&&typeof input.exactMatch!=='boolean')throw new Error('匹配方式无效');
+  return {mode:'keyword',source:input.source,keyword,exactMatch:input.exactMatch===true,category:keywordCategory};
+}
 export function metric(input) {
   if (input === null || input === undefined || input === '') return { value: null, exact: false, raw: null };
   const raw = String(input).trim().slice(0, 40);
@@ -54,10 +64,25 @@ export function normalizeArticle(row, category) {
 export async function fetchRank(input, config, fetcher = fetch, signal) {
   if (!config.REDFOX_API_KEY) throw new Error('未配置 REDFOX_API_KEY');
   const params = validateSync(input);
+  const data=await fetchData(sources[params.source],{type:params.category,startDate:params.startDate,endDate:params.endDate},config,fetcher,signal);
+  if (!Array.isArray(data) || data.length>10000) throw new Error('RedFox 列表格式无效');
+  return data;
+}
+
+export async function fetchKeyword(input,config,fetcher=fetch,signal){
+  const params=validateKeyword(input);
+  const data=await fetchData(keywordSources[params.source],{keyword:params.keyword,offset:0,exactMatch:params.exactMatch},config,fetcher,signal);
+  const rows=Array.isArray(data)?data:data?.list??data?.items??data?.records;
+  if(!Array.isArray(rows)||rows.length>100)throw new Error('RedFox 关键词搜索列表格式无效');
+  return rows;
+}
+
+async function fetchData(path,body,config,fetcher,signal){
+  if (!config.REDFOX_API_KEY) throw new Error('未配置 REDFOX_API_KEY');
   const timeout = AbortSignal.timeout(25000);
-  const response = await fetcher('https://redfox.hk'+sources[params.source], {
+  const response = await fetcher('https://redfox.hk'+path, {
     method:'POST', redirect:'error', headers:{'Content-Type':'application/json',REDFOX_API_KEY:config.REDFOX_API_KEY},
-    body:JSON.stringify({type:params.category,startDate:params.startDate,endDate:params.endDate}),
+    body:JSON.stringify(body),
     signal: signal ? AbortSignal.any([signal,timeout]) : timeout,
   });
   if (!response.ok) throw new Error(`RedFox 请求失败（HTTP ${response.status}）`);
@@ -65,6 +90,5 @@ export async function fetchRank(input, config, fetcher = fetch, signal) {
   try {while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>12*1024*1024)throw new Error('RedFox 响应超过大小限制');chunks.push(value);}} finally {await reader.cancel().catch(()=>{});}
   let result;try{result=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw new Error('RedFox 响应格式无效');}
   if (result.code !== 2000) throw new Error(`RedFox 业务请求失败（code ${Number(result.code)||'unknown'}）`);
-  if (!Array.isArray(result.data) || result.data.length>10000) throw new Error('RedFox 列表格式无效');
   return result.data;
 }

@@ -19,6 +19,17 @@ test('topic search and status counts cover older than 200, paginate stable ties 
   page=await topics.list('owner',new URLSearchParams({q:'100%'}));assert.equal(page.total,1);assert.equal(page.items[0].id,'000');
   page=await topics.list('owner',new URLSearchParams({q:'needle',status:'writing'}));assert.equal(page.items.length,1);assert.equal(page.items[0].id,'001');assert.equal(page.counts.all,1);
   assert.equal((await topics.list('owner',new URLSearchParams({q:'Private'}))).total,0);
+  assert.deepEqual((await topics.get('000','owner')).tags,[]);
+  await topics.update('000',{revision:0,tags:[' 教程 ','AI 工具','教程'],status:'archived'},'owner');
+  await topics.update('private',{revision:0,tags:['私人标签']},'other');
+  const tagged=await topics.list('owner',new URLSearchParams({tag:'教程',status:'archived',q:'100%'}));
+  assert.equal(tagged.total,1);assert.equal(tagged.counts.archived,1);
+  assert.deepEqual(tagged.items[0].tags,['教程','AI 工具']);
+  assert.deepEqual(tagged.tags,['AI 工具','教程']);
+  assert.equal((await topics.list('other',new URLSearchParams({tag:'教程'}))).total,0);
+  await assert.rejects(topics.list('owner',new URLSearchParams({tag:'教程',cursor:firstCursor})),e=>e.status===400);
+  await assert.rejects(topics.update('000',{revision:1,tags:['x'.repeat(21)]},'owner'),e=>e.status===400);
+  assert.equal((await topics.update('000',{revision:1,status:'research'},'owner')).topic.status,'research');
   for(const query of [{status:'bad'},{cursor:'bad'},{q:'different',cursor:firstCursor},{limit:'0'}])await assert.rejects(topics.list('owner',new URLSearchParams(query)),e=>e.status===400);
   await assert.rejects(topics.list('other',new URLSearchParams({cursor:firstCursor})),e=>e.status===400);
  }finally{db.close();await rm(dir,{recursive:true,force:true});}

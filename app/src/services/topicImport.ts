@@ -8,7 +8,7 @@ export function importTopicBrief(storage: DraftStorage, briefId: string, markdow
   const original = previous.get(draftKey) || '';
   const next = mode === 'append' && original.trim() ? original + '\n\n---\n\n' + markdown : markdown;
   try {
-    storage.setItem(undoKey, JSON.stringify({ label: '带入选题简报', markdown: original, savedAt: Date.now() }));
+    storage.setItem(undoKey, JSON.stringify({ label: '带入选题简报', markdown: original, savedAt: Date.now(), topicImport: { briefId, receipt: null } }));
     storage.setItem(receipt, String(Date.now()));
     storage.setItem(draftKey, next);
   } catch {

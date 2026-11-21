@@ -7,6 +7,8 @@ import type { XhsDeck } from '../../ai/xhsCards';
 import { generateCoverImage, generateLongImage, generateSlicedImages } from '../../services/imageExportService';
 import { COVER_COLORS, COVER_HEIGHT, COVER_TEMPLATES, COVER_WIDTH, CoverTemplate } from './CoverTemplate';
 import type { CoverTemplateId } from './CoverTemplate';
+import {PictureGenerator} from './PictureGenerator';
+import {AICoverArtwork,AI_COVER_HEIGHT,AI_COVER_WIDTH} from './AICoverArtwork';
 import { getXhsTheme, XHS_CARD_HEIGHT, XHS_CARD_WIDTH, XHS_THEME_PACKS, XhsCard } from './XhsCard';
 import type { XhsCardSpec } from './XhsCard';
 import { getStickerTheme, XHS_STICKER_THEMES, XhsStickerCard } from './XhsStickerCard';
@@ -21,6 +23,8 @@ interface ImageExportPanelProps {
   elementId: string;
   markdown?: string;
   onClose: () => void;
+  onSettings?:()=>void;
+  coverOnly?:boolean;
 }
 
 const RATIO_OPTIONS = [
@@ -127,8 +131,8 @@ const extractCoverDefaults = (markdown: string): { title: string; subtitle: stri
   return { title: raw, subtitle: '' };
 };
 
-export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPanelProps) {
-  const [activeMode, setActiveMode] = useState<'long' | 'slice' | 'cover' | 'cards'>('long');
+export function ImageExportPanel({ elementId, markdown, onClose, onSettings,coverOnly=false }: ImageExportPanelProps) {
+  const [activeMode, setActiveMode] = useState<'long' | 'slice' | 'cover' | 'cards'>(coverOnly?'cover':'long');
   const [sliceRatio, setSliceRatio] = useState<number>(4 / 3);
   const [images, setImages] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -137,6 +141,10 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
   const [coverSubtitle, setCoverSubtitle] = useState(() => extractCoverDefaults(markdown ?? '').subtitle);
   const [coverTemplate, setCoverTemplate] = useState<CoverTemplateId>('poster');
   const [coverColor, setCoverColor] = useState(COVER_COLORS[0]);
+  const [coverArt,setCoverArt]=useState<Blob|null>(null);
+  const [coverAuthor,setCoverAuthor]=useState('');
+  const [coverAlignment,setCoverAlignment]=useState<'left'|'right'>('left');
+  const [coverCrop,setCoverCrop]=useState(50);
   const [isDownloadingCover, setIsDownloadingCover] = useState(false);
   const [coverProposals, setCoverProposals] = useState<CoverCopyProposal[]>([]);
   const [isGeneratingCopy, setIsGeneratingCopy] = useState(false);
@@ -244,14 +252,23 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
     setIsDownloadingCover(true);
     setError(null);
     try {
+      if(coverArt){
+        const image=coverCaptureRef.current.querySelector('img');
+        if(!image)throw new Error('底图仍在加载，请稍后再下载。');
+        await image.decode();
+      }
       const img = await generateCoverImage(coverCaptureRef.current);
-      downloadImage(img, `xiaohongshu_cover_${Date.now()}.png`);
+      downloadImage(img, `${coverArt?'wechat':'xiaohongshu'}_cover_${Date.now()}.png`);
     } catch (e: any) {
       setError(e.message || '生成封面失败');
     } finally {
       setIsDownloadingCover(false);
     }
   };
+
+  const coverPreview=()=>coverArt
+    ? <AICoverArtwork image={coverArt} title={coverTitle} subtitle={coverSubtitle} author={coverAuthor} alignment={coverAlignment} crop={coverCrop}/>
+    : <CoverTemplate title={coverTitle||'输入封面主标题'} subtitle={coverSubtitle} template={coverTemplate} accentColor={coverColor}/>;
 
   const handleGenerateCopy = async () => {
     setIsGeneratingCopy(true);
@@ -342,11 +359,11 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-pink-200">
               <Sparkles className="h-3.5 w-3.5" />
-              Image Export
+              {coverOnly?'AI COVER':'Image Export'}
             </div>
-            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">图片导出中心</h2>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-white">{coverOnly?'AI 封面':'图片导出中心'}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-300">
-              一键生成高清长图或按照平台比例切片，完美适配小红书等图文平台。
+              {coverOnly?'选择画面风格，生成底图，再编辑标题和署名。':'生成高清长图、平台切片、封面和小红书图文。'}
             </p>
           </div>
 
@@ -359,7 +376,7 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
           </button>
         </div>
 
-        <div className="relative flex items-center justify-between gap-3 border-b border-white/10 px-7 py-4">
+        {!coverOnly&&<div className="relative flex items-center justify-between gap-3 border-b border-white/10 px-7 py-4">
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setActiveMode('long')}
@@ -423,7 +440,7 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
               </select>
             </div>
           )}
-        </div>
+        </div>}
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-auto px-7 py-6">
           {error && (
@@ -728,6 +745,14 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
                     </p>
                   )}
                 </div>
+                <PictureGenerator initialPrompt={`公众号文章横版封面背景。主题：${coverTitle.slice(0,150)}。${markdown?.split(/\n+/).filter(line=>line.trim()&&!line.startsWith('#')).join(' ').slice(0,300)||''}。做出清楚的视觉主体，主体靠右，左侧留出干净暗色区域放标题。不要文字、数字、水印和标志。`}
+                  label="生成一张封面底图" onPicture={picture=>setCoverArt(picture?.blob??null)} onSettings={onSettings}/>
+                {coverArt&&<div className="flex flex-wrap items-center gap-3 text-sm">
+                  <label>署名 <input className="rounded border border-white/20 bg-white/5 p-1" maxLength={24} value={coverAuthor} onChange={e=>setCoverAuthor(e.target.value)}/></label>
+                  <label>标题位置 <select className="rounded border border-white/20 bg-slate-800 p-1" value={coverAlignment} onChange={e=>setCoverAlignment(e.target.value==='right'?'right':'left')}><option value="left">左侧</option><option value="right">右侧</option></select></label>
+                  <label className="flex gap-2">底图上下裁切 <input type="range" min={0} max={100} value={coverCrop} onChange={e=>setCoverCrop(Number(e.target.value))}/></label>
+                  <button type="button" className="underline" onClick={()=>setCoverArt(null)}>使用模板封面</button>
+                </div>}
                 <div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
                     主标题
@@ -752,7 +777,7 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
                     className="w-full resize-none rounded-[18px] border border-white/10 bg-white/5 px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-slate-500 focus:border-amber-300/50"
                   />
                 </div>
-                <div>
+                {!coverArt&&<><div>
                   <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
                     封面模板
                   </label>
@@ -791,7 +816,7 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
                       />
                     ))}
                   </div>
-                </div>
+                </div></>}
                 <button
                   onClick={handleDownloadCover}
                   disabled={isDownloadingCover || !coverTitle.trim()}
@@ -802,15 +827,15 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
                   ) : (
                     <Download className="h-4 w-4" />
                   )}
-                  下载封面 PNG（3:4 高清）
+                  {coverArt?'下载横版封面 PNG':'下载封面 PNG（3:4 高清）'}
                 </button>
               </div>
 
               <div className="flex flex-1 items-start justify-center overflow-auto rounded-[26px] border border-white/10 bg-[rgba(15,23,42,0.46)] p-6">
                 <div
                   style={{
-                    width: COVER_WIDTH * COVER_PREVIEW_SCALE,
-                    height: COVER_HEIGHT * COVER_PREVIEW_SCALE,
+                    width: (coverArt?AI_COVER_WIDTH:COVER_WIDTH) * COVER_PREVIEW_SCALE,
+                    height: (coverArt?AI_COVER_HEIGHT:COVER_HEIGHT) * COVER_PREVIEW_SCALE,
                     overflow: 'hidden',
                     borderRadius: 12,
                     boxShadow: '0 20px 60px rgba(2,8,23,0.5)',
@@ -823,12 +848,7 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
                     }}
                   >
                     <div>
-                      <CoverTemplate
-                        title={coverTitle || '输入封面主标题'}
-                        subtitle={coverSubtitle}
-                        template={coverTemplate}
-                        accentColor={coverColor}
-                      />
+                      {coverPreview()}
                     </div>
                   </div>
                 </div>
@@ -836,13 +856,8 @@ export function ImageExportPanel({ elementId, markdown, onClose }: ImageExportPa
 
               {/* 截图专用：屏幕外的原始尺寸封面节点（勿加 visibility/opacity，否则截出空白） */}
               <div style={{ position: 'fixed', left: -99999, top: 0, pointerEvents: 'none' }} aria-hidden>
-                <div ref={coverCaptureRef}>
-                  <CoverTemplate
-                    title={coverTitle || '输入封面主标题'}
-                    subtitle={coverSubtitle}
-                    template={coverTemplate}
-                    accentColor={coverColor}
-                  />
+                <div ref={coverCaptureRef} style={{width:coverArt?AI_COVER_WIDTH:COVER_WIDTH}}>
+                  {coverPreview()}
                 </div>
               </div>
             </div>

@@ -1,6 +1,8 @@
 import { lazy, useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import type {TopicDraft} from '../services/topicDraft';
+import {useWorkspaceConfirmation} from '../components/ui/useWorkspaceConfirmation';
 import {
   BookOpen,
   Cloud,
@@ -17,14 +19,14 @@ import {
 import { getAITypesetMarkdown } from '../ai/formatter';
 import {saveDraftBackup} from '../services/draftBackups';
 import {LazyTool} from '../components/ui/LazyTool';
-import {ApiConnectionTest} from '../components/ui/ApiConnectionTest';
+import {WorkbenchSettings} from '../components/workbench/WorkbenchSettings';
+import {readPersonalAI} from '../services/personalAISettings';
 import { WorkbenchShell } from '../components/workbench/WorkbenchShell';
 import { ArticleControls } from '../features/articles/ArticleControls';
 import { ArticleImages } from '../features/images/ArticleImages';
 import { ImportArticleModal, type PendingArticleImport } from '../components/ui/ImportArticleModal';
 import { atomicDraftWrite, draftKeys } from '../services/draftScope';
 import {articleIdentityJson,loadArticleIdentity,notifyArticleIdentity} from '../services/articleIdentity';
-import { UiSkinControl } from '../components/workbench/UiSkinControl';
 import { analyzeAiTypesetOutput } from '../ai/aiOutputCheck';
 import type { AiOutputAnalysis } from '../ai/aiOutputCheck';
 import { AiResultReviewModal } from '../components/ui/AiResultReviewModal';
@@ -105,16 +107,8 @@ import {
   type IllustrationJob,
   getIllustrationPlan,
   type IllustrationPlan,
+  type IllustrationPlanItem,
 } from '../services/illustrationService';
-import {
-  loadCdnConfig,
-  loadR2Config,
-  loadUploadMode,
-  saveCdnConfig,
-  saveR2Config,
-  saveUploadMode,
-} from '../services/imageUpload';
-import type { UploadMode } from '../services/imageUpload';
 import {
   generateXArticleExport,
   generateXThreadExport,
@@ -127,6 +121,7 @@ const CheatsheetModal = lazy(() => import('../components/ui/CheatsheetModal').th
 const FeishuSidebar = lazy(() => import('../components/ui/FeishuSidebar').then(module => ({default:module.FeishuSidebar})));
 const IllustrationJobPanel = lazy(() => import('../components/ui/IllustrationJobPanel').then(module => ({default:module.IllustrationJobPanel})));
 const IllustrationPlanModal = lazy(() => import('../components/ui/IllustrationPlanModal').then(module => ({default:module.IllustrationPlanModal})));
+const ArticlePictureModal = lazy(() => import('../components/ui/ArticlePictureModal').then(module => ({default:module.ArticlePictureModal})));
 const PlatformExportPanel = lazy(() => import('../components/ui/PlatformExportPanel').then(module => ({default:module.PlatformExportPanel})));
 const ImageExportPanel = lazy(() => import('../components/ui/ImageExportPanel').then(module => ({default:module.ImageExportPanel})));
 
@@ -216,7 +211,8 @@ function createArticle(title, theme = 'jade') {
 const FORMAT_PREFERENCES_STORAGE_KEY = 'ai_format_preferences';
 const FORMAT_CUSTOM_NOTE_STORAGE_KEY = 'ai_format_custom_note';
 
-function TypesetterView({draftOwner}:{draftOwner:string}) {
+function TypesetterView({draftOwner,accountOwner,topicDraft}:{draftOwner:string;accountOwner:string;topicDraft:TopicDraft|null}) {
+  const {confirm,confirmation}=useWorkspaceConfirmation();
   const isOnlineMode = import.meta.env.VITE_APP_MODE === 'online';
   const isRealAuth = usesRealAuth();
   const [localDiscoveryDebug, setLocalDiscoveryDebug] = useState(false);
@@ -233,7 +229,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
   const latestMarkdown=useRef(markdown);
   const setMarkdown=useCallback((value:string)=>{latestMarkdown.current=value;setMarkdownState(value);},[]);
   const [guestDraft]=useState(()=>loadDraft('guest'));
-  const guestRecoveryAvailable=draftOwner!=='guest'&&Boolean(guestDraft&&guestDraft!==defaultMarkdown);
+  const guestRecoveryAvailable=!topicDraft&&draftOwner!=='guest'&&Boolean(guestDraft&&guestDraft!==defaultMarkdown);
   const [showGuestRecovery,setShowGuestRecovery]=useState(()=>{try{return !localStorage.getItem('gzh_guest_draft_dismissed:'+draftOwner);}catch{return true;}});
   const [draftSaveState, setDraftSaveState] = useState<'saving' | 'saved' | 'error'>('saving');
   const [previewWidth, setPreviewWidth] = useState<375 | 677>(375);
@@ -263,9 +259,6 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
   const [isPlanningIllustration, setIsPlanningIllustration] = useState(false);
   const [isApplyingIllustration, setIsApplyingIllustration] = useState(false);
   const [isApplyingIllustrationResult, setIsApplyingIllustrationResult] = useState(false);
-  const [apiKey, setApiKey] = useState(localStorage.getItem('openai_api_key') || '');
-  const [apiBaseUrl, setApiBaseUrl] = useState(localStorage.getItem('openai_api_base') || '');
-  const [apiModel, setApiModel] = useState(localStorage.getItem('openai_model') || '');
   const [showSettings, setShowSettings] = useState(() => new URLSearchParams(location.search).get('settings') === '1');
   const [showDraftBackups,setShowDraftBackups]=useState(false);
   const [showCheatsheet, setShowCheatsheet] = useState(false);
@@ -277,22 +270,12 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
   const [activeComponentStyle, setActiveComponentStyle] = useState<ComponentStyleConfig>(DEFAULT_COMPONENT_STYLE_CONFIG);
   const [customStyleSchemes, setCustomStyleSchemes] = useState<StyleScheme[]>(loadCustomStyleSchemes);
   const [editingSchemeId, setEditingSchemeId] = useState<string | null>(null);
-  const [settingsTab, setSettingsTab] = useState<'ai' | 'cdn'>('ai');
-
-  const [uploadMode, setUploadMode] = useState<UploadMode>(loadUploadMode());
-  const savedR2 = loadR2Config();
-  const [r2WorkerUrl, setR2WorkerUrl] = useState(savedR2?.workerUrl || '');
-  const [r2UploadSecret, setR2UploadSecret] = useState(savedR2?.uploadSecret || '');
-  const savedCdn = loadCdnConfig();
-  const [cdnUploadUrl, setCdnUploadUrl] = useState(savedCdn?.uploadUrl || '');
-  const [cdnFieldName, setCdnFieldName] = useState(savedCdn?.fieldName || 'file');
-  const [cdnHeaders, setCdnHeaders] = useState(savedCdn?.headers || '');
-  const [cdnResponsePath, setCdnResponsePath] = useState(savedCdn?.responsePath || 'data.url');
-
   const [authUser, setAuthUser] = useState<User | null>(getCurrentUser());
   const [devIdentityRole, setDevIdentityRole] = useState<DevIdentityRole>(loadDevIdentityRole());
   const [presets, setPresets] = useState<Preset[]>([]);
   const [illustrationPlan, setIllustrationPlan] = useState<IllustrationPlan | null>(null);
+  const illustrationSource=useRef('');
+  const [articlePicture,setArticlePicture]=useState<IllustrationPlanItem|null>(null);
   const [lastIllustrationJob, setLastIllustrationJob] = useState<IllustrationJob | null>(null);
   const [selectedIllustrationIds, setSelectedIllustrationIds] = useState<string[]>([]);
   const [toastItems, setToastItems] = useState<ToastItem[]>([]);
@@ -302,7 +285,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
   const [previewTab, setPreviewTab] = useState<'wechat' | 'xThread' | 'xArticle'>('wechat');
   const [xThreadExport, setXThreadExport] = useState<XThreadExport | null>(null);
   const [xArticleExport, setXArticleExport] = useState<XArticleExport | null>(null);
-  const [showImageExportPanel, setShowImageExportPanel] = useState(false);
+  const [imageExportEntry,setImageExportEntry]=useState<'export'|'cover'|null>(null);
   const [showFeishuSidebar, setShowFeishuSidebar] = useState(false);
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -470,7 +453,19 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
     const keys=draftKeys(draftOwner);
     const writes=new Map([[keys.draft,undoSnapshot.markdown],[keys.undo,JSON.stringify(reverse)]] as Array<[string,string|null]>);
     if(Object.prototype.hasOwnProperty.call(undoSnapshot,'article'))writes.set(keys.article,articleIdentityJson(undoSnapshot.article||null));
-    try{atomicDraftWrite(localStorage,writes);}catch{pushToast('error','撤销失败','本机保存失败，当前正文保持原样。');return;}
+    try {
+      if (undoSnapshot.topicImport) {
+        const {briefId, receipt} = undoSnapshot.topicImport;
+        const key = keys.receipt(briefId);
+        reverse.topicImport = {briefId, receipt:localStorage.getItem(key)};
+        writes.set(key, receipt);
+        writes.set(keys.undo, JSON.stringify(reverse));
+      }
+      atomicDraftWrite(localStorage,writes);
+    } catch {
+      pushToast('error','撤销失败','本机保存失败，当前正文保持原样。');
+      return;
+    }
     setMarkdown(undoSnapshot.markdown);
     setUndoSnapshot(reverse);
     notifyArticleIdentity();
@@ -721,7 +716,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
       return;
     }
 
-    if (!apiKey.trim()) {
+    if (!readPersonalAI().apiKey.trim()) {
       pushToast('info', '需要配置 API Key', '请先在工作台设置中配置个人 API Key。');
       setShowSettings(true);
       return;
@@ -747,7 +742,8 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
     setIsTypesetting(true);
     const original = markdown;
     try {
-      const rawOutput = await getAITypesetMarkdown(apiKey.trim(), original, apiBaseUrl.trim(), apiModel.trim(), preferences, customNote);
+      const {apiKey,baseUrl,model}=readPersonalAI();
+      const rawOutput = await getAITypesetMarkdown(apiKey.trim(), original, baseUrl.trim(), model.trim(), preferences, customNote);
       // 结果不直接落地：先给用户看对比和截断检查，确认后再替换
       setPendingAiResult({ original, analysis: analyzeAiTypesetOutput(original, rawOutput) });
     } catch (error: any) {
@@ -786,6 +782,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
         themeId: activeTheme.id,
       });
 
+      illustrationSource.current=markdown;
       setIllustrationPlan(plan);
       setSelectedIllustrationIds(plan.items.map((item) => item.id));
     } catch (error: any) {
@@ -853,9 +850,9 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
     setActiveComponentStyle(DEFAULT_COMPONENT_STYLE_CONFIG);
   };
 
-  const handleApplyStyleScheme = (scheme: StyleScheme, keepEditing = false) => {
+  const handleApplyStyleScheme = async (scheme: StyleScheme, keepEditing = false) => {
     if (!keepEditing && editingSchemeId && editingDirty) {
-      const shouldDiscard = window.confirm('当前方案有未保存修改，确定放弃吗？');
+      const shouldDiscard = await confirm({title:'切换排版方案？',message:'当前方案有未保存的修改。切换后将丢弃这些修改。',confirmLabel:'放弃并切换',cancelLabel:'继续编辑'});
       if (!shouldDiscard) return;
     }
     setEditingSchemeId(keepEditing ? scheme.id : null);
@@ -1135,26 +1132,6 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
     onExport: handleExportCustomStyleSchemes
   };
 
-  const saveSettings = () => {
-    localStorage.setItem('openai_api_key', apiKey.trim());
-    localStorage.setItem('openai_api_base', apiBaseUrl);
-    localStorage.setItem('openai_model', apiModel);
-
-    saveUploadMode(uploadMode);
-    saveR2Config({
-      workerUrl: r2WorkerUrl,
-      uploadSecret: r2UploadSecret,
-    });
-    saveCdnConfig({
-      uploadUrl: cdnUploadUrl,
-      fieldName: cdnFieldName || 'file',
-      headers: cdnHeaders,
-      responsePath: cdnResponsePath || 'data.url',
-    });
-
-    setShowSettings(false);
-  };
-
   const handleSelectPreviewTab = (tab: 'wechat' | 'xThread' | 'xArticle') => {
     if (tab === 'xThread') {
       setXThreadExport((current) => current || generateXThreadExport(markdown));
@@ -1269,7 +1246,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
         </div>
 )}
         actions={(<>
-          {phaseTwoEnabled && <ArticleControls markdown={markdown} owner={draftOwner} onLogin={() => {
+          {phaseTwoEnabled && <ArticleControls markdown={markdown} owner={draftOwner} accountOwner={accountOwner} onLogin={() => {
             if (!saveDraft(latestMarkdown.current, draftOwner)) { pushToast('error', '草稿保存失败', '请先导出正文，再登录。'); return; }
             navigate('/login', { state: { from: '/' } });
           }} onLoad={(text,article) => {
@@ -1280,8 +1257,14 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
             setUndoSnapshot(snapshot);
             setMarkdown(text);
           }}/>}
-          <button className="wb-image-action flex items-center whitespace-nowrap" data-action="image-export" onClick={() => setShowImageExportPanel(true)}>
+          <button className="wb-image-action flex items-center whitespace-nowrap" data-action="image-export" onClick={() => setImageExportEntry('export')}>
             <ImageDown className="mr-1.5 h-4 w-4" />导出图片
+          </button>
+          <button type="button" data-action="ai-cover" className="wb-image-action flex items-center whitespace-nowrap" onClick={()=>setImageExportEntry('cover')}>
+            <ImagePlus className="mr-1.5 h-4 w-4"/>AI 封面
+          </button>
+          <button type="button" data-action="ai-illustration" className="wb-image-action flex items-center whitespace-nowrap" disabled={isPlanningIllustration} onClick={()=>void handleIllustrationPlan()}>
+            <ImagePlus className="mr-1.5 h-4 w-4"/>{isPlanningIllustration?'分析配图中…':'AI 配图'}
           </button>
           <HeaderMenu
             label="AI 工具"
@@ -1332,7 +1315,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
                 key: 'export-image',
                 label: '导出图片',
                 icon: <ImageDown className="mr-2 h-4 w-4 text-pink-600" />,
-                onSelect: () => setShowImageExportPanel(true),
+                onSelect: () => setImageExportEntry('export'),
               },
             ]}
           />
@@ -1352,6 +1335,14 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
         </>)}
       >
 
+      {topicDraft && <div className="wb-draft-recovery wb-topic-draft">
+        <div><strong>选题草稿 · {topicDraft.title}</strong><p>草稿自动保存在本浏览器。回到选题可查看参考文章和简报。</p></div>
+        <Link to={'/topics/'+encodeURIComponent(topicDraft.id)} onClick={event=>{
+          if(saveDraft(latestMarkdown.current,draftOwner))return;
+          event.preventDefault();
+          pushToast('error','草稿保存失败','请先导出正文，再返回选题。');
+        }}>返回选题</Link>
+      </div>}
       {guestRecoveryAvailable && showGuestRecovery && <div className="wb-draft-recovery" role="status"><div><strong>本浏览器保留了一份访客或旧版草稿</strong><p>可手动带入当前账号；原稿继续保留，当前正文可撤销恢复。</p></div><button onClick={recoverGuest}>恢复访客草稿</button><button onClick={dismissGuestRecovery}>暂不带入</button></div>}
       <main className="wb-editor-grid">
         <section className="wb-editor-pane">
@@ -1531,12 +1522,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
 
       {pendingImport && <ImportArticleModal source={pendingImport} error={importError} hasContent={Boolean(markdown.trim())} onImport={confirmExternalImport} onClose={() => { setPendingImport(null); setImportError(''); }} />}
 
-      {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-md animate-in fade-in duration-200">
-          <div data-ui-surface role="dialog" aria-modal="true" aria-labelledby="workbench-settings-title" className="m-4 max-h-[calc(100dvh-2rem)] w-[480px] max-w-full overflow-y-auto rounded-[20px] bg-white/95 p-8 shadow-2xl ring-1 ring-black/5 animate-in zoom-in-95 duration-200">
-            <div className="mb-6 flex items-center justify-between gap-3"><h3 id="workbench-settings-title" className="text-xl font-bold text-gray-900">工作台设置</h3><button type="button" aria-label="关闭工作台设置" onClick={() => setShowSettings(false)} className="rounded-lg px-2 py-1 text-xl text-gray-500 hover:bg-gray-100">×</button></div>
-
-            <UiSkinControl />
+      {showSettings && <WorkbenchSettings onClose={()=>setShowSettings(false)}>
             {guestRecoveryAvailable && <section className="wb-recovery-settings"><strong>本机草稿恢复</strong><p>访客及旧版草稿保留在本浏览器，可手动带入当前账号。</p><button onClick={()=>{recoverGuest();setShowSettings(false);}}>恢复访客草稿</button></section>}
 
             {showDevIdentity && (
@@ -1583,200 +1569,7 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
                 </div>
               </div>
             )}
-
-            <div className="mb-5 flex space-x-1 rounded-lg bg-gray-100 p-1">
-              <button
-                onClick={() => setSettingsTab('ai')}
-                className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  settingsTab === 'ai'
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                AI 排版
-              </button>
-              <button
-                onClick={() => setSettingsTab('cdn')}
-                className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
-                  settingsTab === 'cdn'
-                    ? 'bg-white text-gray-800 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                图片上传
-              </button>
-            </div>
-
-            {settingsTab === 'ai' && (
-              <div className="mb-4 space-y-4">
-                <p className="text-sm leading-6 text-gray-500">个人 API：游客和登录用户均可使用。配置保存在当前浏览器，请求直接发送到你填写的服务商；调用费用由你的 API 账户承担。接口需支持浏览器跨域访问，HTTPS 网站请填写 HTTPS 接口。</p>
-                <div>
-                  <label htmlFor="personal-ai-key" className="mb-1 block text-sm font-medium text-gray-700">OpenAI 兼容 API Key</label>
-                  <input
-                    id="personal-ai-key"
-                    autoComplete="off"
-                    type="password"
-                    value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
-                    placeholder="sk-..."
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="personal-ai-base" className="mb-1 block text-sm font-medium text-gray-700">接口地址（Base URL）</label>
-                  <input
-                    id="personal-ai-base"
-                    type="text"
-                    value={apiBaseUrl}
-                    onChange={(event) => setApiBaseUrl(event.target.value)}
-                    placeholder="默认: https://api.openai.com/v1"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="personal-ai-model" className="mb-1 block text-sm font-medium text-gray-700">模型名称（Model）</label>
-                  <input
-                    id="personal-ai-model"
-                    type="text"
-                    value={apiModel}
-                    onChange={(event) => setApiModel(event.target.value)}
-                    placeholder="默认: gpt-4o"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <ApiConnectionTest apiKey={apiKey} baseUrl={apiBaseUrl} model={apiModel}/>
-              </div>
-            )}
-
-            {settingsTab === 'cdn' && (
-              <div className="mb-4 space-y-3">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-gray-700">上传模式</label>
-                  <div className="flex space-x-1 rounded-lg bg-gray-100 p-1">
-                    {([
-                      { key: 'r2' as UploadMode, label: '服务器图床' },
-                      { key: 'custom' as UploadMode, label: '自定义 CDN' },
-                      { key: 'base64' as UploadMode, label: 'Base64' },
-                    ]).map((mode) => (
-                      <button
-                        key={mode.key}
-                        onClick={() => setUploadMode(mode.key)}
-                        className={`flex-1 rounded-md py-1.5 text-xs font-medium transition-colors ${
-                          uploadMode === mode.key
-                            ? 'bg-white text-gray-800 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        {mode.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {uploadMode === 'r2' && import.meta.env.VITE_API_SAME_ORIGIN === 'true' && (
-                  <p className="text-sm text-gray-500">{accountsEnabled?'图片保存到当前服务器，登录后即可上传。':'服务器图片上传后续开放，当前可使用其他图床或图片链接。'}</p>
-                )}
-                {uploadMode === 'r2' && import.meta.env.VITE_API_SAME_ORIGIN !== 'true' && (
-                  <>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">
-                        后端地址 <span className="text-red-400">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={r2WorkerUrl}
-                        onChange={(event) => setR2WorkerUrl(event.target.value)}
-                        placeholder="https://your-worker.workers.dev"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">Upload Secret</label>
-                      <input
-                        type="password"
-                        value={r2UploadSecret}
-                        onChange={(event) => setR2UploadSecret(event.target.value)}
-                        placeholder="可选，用于兼容旧的 Secret 模式"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {uploadMode === 'custom' && (
-                  <>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">
-                        上传接口 URL <span className="text-red-400">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={cdnUploadUrl}
-                        onChange={(event) => setCdnUploadUrl(event.target.value)}
-                        placeholder="https://upload.example.com/v1/image"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">图片字段名</label>
-                      <input
-                        type="text"
-                        value={cdnFieldName}
-                        onChange={(event) => setCdnFieldName(event.target.value)}
-                        placeholder="file"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">额外请求头（JSON）</label>
-                      <input
-                        type="text"
-                        value={cdnHeaders}
-                        onChange={(event) => setCdnHeaders(event.target.value)}
-                        placeholder='{"Authorization":"Bearer xxx"}'
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">URL 提取路径</label>
-                      <input
-                        type="text"
-                        value={cdnResponsePath}
-                        onChange={(event) => setCdnResponsePath(event.target.value)}
-                        placeholder="data.url"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm outline-none transition-all focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {uploadMode === 'base64' && (
-                  <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
-                    <p className="text-xs text-amber-700">
-                      Base64 模式无需任何上传配置，但会显著增大文章体积。
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="mt-6 flex justify-end space-x-3">
-              <button
-                onClick={() => setShowSettings(false)}
-                className="rounded-xl px-5 py-2.5 text-sm font-medium text-gray-600 transition-all hover:bg-gray-100/80 hover:text-gray-900"
-              >
-                取消
-              </button>
-              <button
-                onClick={saveSettings}
-                className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-medium text-white shadow-md transition-all hover:bg-emerald-700 hover:shadow-lg"
-              >
-                保存设置
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      </WorkbenchSettings>}
 
       {showDraftBackups && <LazyTool onClose={()=>setShowDraftBackups(false)}><DraftBackupsPanel owner={draftOwner} getCurrent={()=>latestMarkdown.current} onRestore={(next,undo)=>{setMarkdown(next);setUndoSnapshot(undo);notifyArticleIdentity();}} onClose={()=>setShowDraftBackups(false)}/></LazyTool>}
       {showCheatsheet && <LazyTool onClose={() => setShowCheatsheet(false)}><CheatsheetModal onClose={() => setShowCheatsheet(false)} /></LazyTool>}
@@ -1840,10 +1633,39 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
           selectedIds={selectedIllustrationIds}
           isSubmitting={isApplyingIllustration}
           onToggle={handleToggleIllustrationItem}
+          onGeneratePicture={setArticlePicture}
+          onGenerateAtEnd={()=>setArticlePicture({
+            id:'article-end',anchor:{kind:'paragraph',index:-1,excerpt:illustrationSource.current.slice(0,240)},anchorLabel:'正文末尾',
+            reason:'补充文章主题插图',purpose:'用画面说明文章的主题',type:'scene',engine:'http_image',style:'清晰的编辑插画',alt:'文章主题插图',priority:1,
+          })}
           onConfirm={handleApplyIllustrationPlan}
           onClose={handleCloseIllustrationPlan}
         /></LazyTool>
       )}
+      {articlePicture&&<LazyTool onClose={()=>setArticlePicture(null)}><ArticlePictureModal
+        item={articlePicture}
+        onClose={()=>setArticlePicture(null)}
+        onSettings={()=>setShowSettings(true)}
+        onInsert={(url,alt)=>{
+          const source=illustrationSource.current;
+          if(latestMarkdown.current!==source)throw new Error('正文已有改动，请重新打开配图建议确认插入位置。');
+          const lines=source.split('\n');
+          const index=articlePicture.anchor.index;
+          const isHeading=/^#{1,3}\s+/.test(lines[index]||'')&&articlePicture.anchor.heading!=='正文概览';
+          const block=`![${alt.replace(/[\[\]\\\r\n]/g,'').trim()}](<${url}>)`;
+          lines.splice(isHeading?index+1:lines.length,0,'',block,'');
+          const next=lines.join('\n');
+          const snapshot={label:'插入 AI 插图',markdown:source,savedAt:Date.now()};
+          const keys=draftKeys(draftOwner);
+          try{atomicDraftWrite(localStorage,new Map([[keys.draft,next],[keys.undo,JSON.stringify(snapshot)]]));}
+          catch{throw new Error('草稿保存失败，插图尚未插入。');}
+          setUndoSnapshot(snapshot);
+          setMarkdown(next);
+          setArticlePicture(null);
+          handleCloseIllustrationPlan();
+          pushToast('success','已插入 AI 插图');
+        }}
+      /></LazyTool>}
       {lastIllustrationJob && (
         <LazyTool onClose={() => setLastIllustrationJob(null)}><IllustrationJobPanel
           job={lastIllustrationJob}
@@ -1853,13 +1675,16 @@ function TypesetterView({draftOwner}:{draftOwner:string}) {
           onClose={() => setLastIllustrationJob(null)}
         /></LazyTool>
       )}
-      {showImageExportPanel && (
-        <LazyTool onClose={() => setShowImageExportPanel(false)}><ImageExportPanel
+      {imageExportEntry && (
+        <LazyTool onClose={() => setImageExportEntry(null)}><ImageExportPanel
           elementId="wechat-article-preview"
           markdown={markdown}
-          onClose={() => setShowImageExportPanel(false)}
+          coverOnly={imageExportEntry==='cover'}
+          onSettings={()=>setShowSettings(true)}
+          onClose={() => setImageExportEntry(null)}
         /></LazyTool>
       )}
+      {confirmation}
       {accountsEnabled && showFeishuSidebar && <LazyTool onClose={() => setShowFeishuSidebar(false)}><FeishuSidebar
         open={showFeishuSidebar}
         onClose={() => setShowFeishuSidebar(false)}

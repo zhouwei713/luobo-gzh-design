@@ -1,5 +1,9 @@
-import {validateSync} from './provider.mjs';
+import {validateKeyword,validateSync} from './provider.mjs';
 export function planBackfill(input,maxRequests=7){
+ if(input?.mode==='keyword'){
+  const params=validateKeyword(input);
+  return {params,steps:[params]};
+ }
  const params=validateSync(input),mode=input.mode??'range';
  if(!['range','daily'].includes(mode))throw new Error('采集方式无效');
  if(mode==='range')return {params:{...params,mode},steps:[params]};

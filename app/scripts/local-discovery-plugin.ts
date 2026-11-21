@@ -32,7 +32,13 @@ export function localDiscoveryPlugin(options: { dataDir?: string } = {}): Plugin
             const module = await server.ssrLoadModule(resolve(backendRoot, 'application.mjs'));
             return module.createApplication({
               dataDir: options.dataDir || process.env.GZH_LOCAL_DATA_DIR || resolve(server.config.root, '../server/data'), staticDir: resolve(server.config.root, 'dist'),
-              publicUrl: `http://${host}`, config: { NODE_ENV: 'development', LOCAL_DISCOVERY_DEBUG: '1', ENABLE_PHASE2: server.config.env.VITE_ENABLE_PHASE2 === 'true' ? '1' : '0' },
+              publicUrl: `http://${host}`, config: {
+                NODE_ENV: 'development', LOCAL_DISCOVERY_DEBUG: '1', ENABLE_PHASE2: server.config.env.VITE_ENABLE_PHASE2 === 'true' ? '1' : '0',
+                ...(process.env.REDFOX_KEYWORD_COLLECTION === '1' ? {
+                  REDFOX_KEYWORD_COLLECTION: '1', REDFOX_API_KEY: process.env.REDFOX_API_KEY,
+                  REDFOX_DAILY_REQUEST_LIMIT: process.env.REDFOX_DAILY_REQUEST_LIMIT ?? '1',
+                } : {}),
+              },
             }) as Promise<LocalApplication>;
           })();
           await (await application).handle(req, res);

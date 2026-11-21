@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { FileText, Link2, Loader2, RefreshCw, X } from 'lucide-react';
+import { useWorkspaceConfirmation } from './useWorkspaceConfirmation';
 
 import {
   asFeishuError,
@@ -35,6 +36,7 @@ function formatModifiedTime(ms: number): string {
 }
 
 export function FeishuSidebar({ open, onClose, onImport }: FeishuSidebarProps) {
+  const {confirm,confirmation}=useWorkspaceConfirmation();
   const isOnlineMode = import.meta.env.VITE_APP_MODE === 'online';
 
   const [statusLoading, setStatusLoading] = useState(true);
@@ -147,7 +149,7 @@ export function FeishuSidebar({ open, onClose, onImport }: FeishuSidebarProps) {
   };
 
   const handleDisconnect = async () => {
-    if (!window.confirm(`确定解绑飞书账号「${feishuUserName}」吗？`)) return;
+    if (!await confirm({title:'解绑飞书账号？',message:`解绑「${feishuUserName}」后，再次从飞书导入文档时需要重新授权。`,confirmLabel:'确认解绑'})) return;
     setError('');
     try {
       await disconnect();
@@ -286,6 +288,7 @@ export function FeishuSidebar({ open, onClose, onImport }: FeishuSidebarProps) {
 
   return (
     <div data-ui-surface className="fixed inset-y-0 left-0 z-40 flex w-[360px] flex-col border-r border-gray-200 bg-white shadow-2xl">
+      {confirmation}
       <div className="flex h-12 flex-none items-center justify-between border-b border-gray-200 px-4">
         <h2 className="text-sm font-semibold text-gray-800">飞书文档</h2>
         <button

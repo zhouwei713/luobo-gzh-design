@@ -23,7 +23,7 @@ test('local discovery identity is opt-in, loopback-only, production-disabled and
    const created=await request('/api/topics',{title:'Local topic'});assert.equal(created.status,201);
    assert.equal((await request('/api/topics')).data.items.length,1);
    assert.equal((await request('/api/discovery/sync',{})).status,403);
-   assert.equal((await request(`/api/topics/${created.data.topic.id}/briefs/generate`,{revision:0})).status,403);
+   assert.equal((await request(`/api/topics/${created.data.topic.id}/briefs/generate`,{revision:0})).status,404);
    assert.equal((await request('/api/discovery/articles',null,{Origin:'https://foreign.example'})).status,401);
    const forged=await new Promise((resolve,reject)=>{get(base+'/api/discovery/articles',{headers:{Host:'foreign.example','X-Forwarded-For':'127.0.0.1'}},res=>{res.resume();resolve(res.statusCode);}).on('error',reject);});
    assert.equal(forged,401);

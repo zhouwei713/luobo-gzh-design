@@ -17,6 +17,8 @@ try{
  app=await createApplication({dataDir:dir,staticDir:join(root,'app/dist'),publicUrl:base,config:{NODE_ENV:'production'}});
  browser=await puppeteer.launch({executablePath:process.env.CHROME_PATH||'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
  const page=await browser.newPage();page.setDefaultTimeout(15000);await page.setViewport({width:1440,height:1000});
+ const nativeDialogs=[];
+ page.on('dialog',dialog=>{nativeDialogs.push(dialog.type());void dialog.dismiss();});
  await page.setRequestInterception(true);
  page.on('request',request=>{if(request.url().startsWith(base)||request.url().startsWith('data:')||request.url().startsWith('blob:'))void request.continue();else void request.abort();});
  page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>requests.push(new URL(request.url()).pathname));
@@ -44,6 +46,16 @@ try{
  await page.click('[aria-label="应用方案 常用教程"]');
  await page.click('[aria-label="排版方案"]');await page.click('[aria-label="调整正文排版"]');
  assert.equal(await page.$eval('.wb-control-popover input[type=range]',input=>input.value),'18');await page.click('[aria-label="调整正文排版"]');
+ await open();await page.click('[aria-label="编辑方案 常用教程"]');await page.click('[aria-label="排版方案"]');
+ await page.click('[aria-label="调整正文排版"]');await fill('.wb-control-popover input[type=range]','17');await page.click('[aria-label="调整正文排版"]');
+ await open();await page.click('[aria-label="应用方案 常用教程"]');
+ const confirm='dialog[open][aria-label="切换排版方案？"]';
+ await page.waitForSelector(confirm);await page.keyboard.press('Escape');
+ await page.waitForSelector(confirm,{hidden:true});
+ assert.match(await page.$eval(scope,element=>element.textContent),/有未保存修改/);
+ await page.click('[aria-label="应用方案 常用教程"]');await page.waitForSelector(confirm);await click('放弃并切换',confirm);
+ await page.waitForSelector(confirm,{hidden:true});
+ assert.equal((await saved())[0].typography.bodySize,18);
  await open();await page.click('[aria-label="重命名方案 常用教程"]');await fill('[aria-label="新的预设名称"]','教程排版');await click('确认改名');
  assert.equal((await saved())[0].name,'教程排版');
  // Export through the real download action and import that file again.
@@ -87,7 +99,7 @@ try{
   await failurePage.evaluate(()=>[...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='关闭').click());
   assert.ok(await failurePage.$('textarea[aria-label="Markdown 正文"]'));
  }finally{await failureContext.close();}
- assert.deepEqual(errors,[]);
+ assert.deepEqual(errors,[]);assert.deepEqual(nativeDialogs,[]);
  assert.ok(!requests.some(path=>/^\/api\/(?:auth|user|admin)/.test(path)));
  const report={initialJs,initialBytes:bytes,initialGzipBytes:gzipBytes,singleToolbarEntry:true,sixFeaturedSchemes:true,guestLocalPresets:true,saveReloadApplyRenameDelete:true,jsonRoundTrip:true,storageFailurePreservesData:true,capacityPreservesExisting:true,invalidImportPreservesData:true,mobileNoOverflow:true,heavyToolsDeferred:true,failedToolCanClose:true,videoLazyRouteWorks:true,pageErrors:errors,paidRequests:0};
  await writeFile(join(out,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));

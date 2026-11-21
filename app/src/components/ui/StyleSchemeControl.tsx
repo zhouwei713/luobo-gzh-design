@@ -157,9 +157,14 @@ export function StyleSchemeControl({
     if (!open) return;
 
     const handlePointerDown = (event: MouseEvent) => {
+      if (document.querySelector('.wb-confirmation[open]')) return;
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const handleKeyDown=(event:KeyboardEvent)=>{if(event.key==='Escape'){setOpen(false);event.stopPropagation();}};
+    const handleKeyDown=(event:KeyboardEvent)=>{
+      if(event.key!=='Escape'||document.querySelector('.wb-confirmation[open]'))return;
+      setOpen(false);
+      event.stopPropagation();
+    };
 
     document.addEventListener('mousedown', handlePointerDown);
     document.addEventListener('keydown',handleKeyDown);

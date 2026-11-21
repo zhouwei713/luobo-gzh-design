@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { ArrowRight, BookOpen, Bookmark, Check, CircleHelp, FileText, FolderOpen, LogOut, Maximize2, Menu, Minimize2, MonitorPlay, PenTool, Radar, Settings } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { HeaderMenu } from '../ui/HeaderMenu';
 import {AccountEntry} from './AccountEntry';
+import {guardNavigation} from './guardNavigation';
 import './workbench.css';
 import {accountsEnabled,diagnosticsEnabled,phaseTwoEnabled} from '../../services/releaseScope';
 
@@ -22,7 +23,7 @@ interface WorkbenchShellProps {
   onHelp: () => void;
   onVideo: () => void;
   section?: 'typesetter' | 'discovery' | 'topics' | 'account' | 'articles';
-  onLeave?: () => boolean;
+  onLeave?: () => boolean|Promise<boolean>;
 }
 
 export function WorkbenchShell({ children, toolbar, actions, userName, realAuth, debugIdentity = false, draftState, onLogin, onLogout, onSettings, onConsole, onHelp, onVideo, section = 'typesetter', onLeave }: WorkbenchShellProps) {
@@ -32,8 +33,8 @@ export function WorkbenchShell({ children, toolbar, actions, userName, realAuth,
   const planned = (!accountsEnabled && section==='account') || (!phaseTwoEnabled && ['articles','discovery','topics'].includes(section));
   const heading = planned ? '更多创作能力，后续实现。' : section === 'articles' ? '写过的每一篇，都有自己的位置。' : section === 'account' ? '你的账号，你的创作空间。' : section === 'discovery' ? '好选题，先从值得读的文章开始。' : section === 'topics' ? '留住灵感，写出自己的角度。' : '把内容写好，把样子交给这里。';
   const subtitle = planned ? '当前先专注文章排版，更多功能正在准备中。' : section === 'articles' ? '保存正文，随时接着写。' : section === 'account' ? '查看个人信息，管理账号与登录安全。' : section === 'discovery' ? '从文章库里寻找灵感，留下你的下一篇。' : section === 'topics' ? '参考有出处，观点有自己的来由。' : '专注写作，实时预览，复制到公众号。';
-  const guard = (event: { preventDefault: () => void }) => { if (onLeave && !onLeave()) event.preventDefault(); };
-  const go = (path: string) => { if (!onLeave || onLeave()) navigate(path); };
+  const guard = (event: MouseEvent<HTMLAnchorElement>) => guardNavigation(event,onLeave,navigate);
+  const go = async (path: string) => { if (!onLeave || await onLeave()) navigate(path); };
   const [focusMode, setFocusMode] = useState(false);
   const [focusBusy, setFocusBusy] = useState(false);
   const focusRequestedRef = useRef(false);

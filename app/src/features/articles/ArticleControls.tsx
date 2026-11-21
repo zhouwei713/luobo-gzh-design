@@ -8,7 +8,7 @@ import {getDraftOwner} from '../../services/draftScope';
 import {ARTICLE_IDENTITY_EVENT,loadArticleIdentity,saveArticleIdentity,type ArticleIdentity} from '../../services/articleIdentity';
 import './articles.css';
 
-export function ArticleControls({markdown,owner,onLoad,onLogin}:{markdown:string;owner:string;onLoad:(text:string,article:ArticleIdentity)=>void;onLogin:()=>void}){
+export function ArticleControls({markdown,owner,accountOwner,onLoad,onLogin}:{markdown:string;owner:string;accountOwner:string;onLoad:(text:string,article:ArticleIdentity)=>void;onLogin:()=>void}){
  const [params,setParams]=useSearchParams();const requested=params.get('article');const navigate=useNavigate();
  const [active,setActive]=useState<ArticleIdentity|null>(()=>loadArticleIdentity(owner)),[pending,setPending]=useState<SavedArticle|null>(null),[opening,setOpening]=useState(false),[detach,setDetach]=useState(false);
  const [showSave,setShowSave]=useState(false),[title,setTitle]=useState(''),[asNew,setAsNew]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
@@ -22,11 +22,11 @@ export function ArticleControls({markdown,owner,onLoad,onLogin}:{markdown:string
  },[requested]);
  const closeOpen=()=>{setOpening(false);setPending(null);const next=new URLSearchParams(params);next.delete('article');setParams(next,{replace:true});setError('');};
  const beginSave=()=>{
-  if(owner==='guest'||!getAuthToken()){onLogin();return;}
+  if(accountOwner==='guest'||!getAuthToken()){onLogin();return;}
   setTitle(active?.title||markdown.match(/^#\s+(.+)$/m)?.[1]?.slice(0,200)||'未命名文章');setAsNew(!active);setShowSave(true);setNotice('');setError('');
  };
  const save=async()=>{
-  if(busy)return;if(getDraftOwner()!==owner){setError('账号已切换，请重新进入编辑器');return;}
+  if(busy)return;if(getDraftOwner()!==accountOwner){setError('账号已切换，请重新进入编辑器');return;}
   setBusy(true);setError('');try{
    const result=await articleApi<{article:SavedArticle}>(active&&!asNew?'/'+active.id:'',{title,markdown:latest.current,...(active&&!asNew?{revision:active.revision}:{})},active&&!asNew?'PATCH':'POST');
    setActive(result.article);setShowSave(false);
@@ -49,7 +49,7 @@ export function ArticleControls({markdown,owner,onLoad,onLogin}:{markdown:string
   {opening&&<Modal title="载入已保存的文章" onClose={closeOpen}><div className="article-dialog">
    {pending&&<><h3>{pending.title}</h3><p>将替换当前编辑区正文。当前正文会保留为撤销快照，可在“AI 工具”中恢复。文章的排版方案使用当前设置。</p></>}
    {error&&<p className="article-error" role="alert">{error}</p>}
-   <footer><button onClick={closeOpen}>取消</button>{pending&&<button className="article-primary" onClick={()=>{try{if(getDraftOwner()!==owner)throw Error('账号已切换，请重新进入编辑器');onLoad(pending.markdown,pending);setActive(pending);setNotice('已载入文章，后续修改需点击保存文章');closeOpen();}catch(e){setError(e instanceof Error?e.message:'本机保存失败');}}}>载入排版</button>}</footer>
+   <footer><button onClick={closeOpen}>取消</button>{pending&&<button className="article-primary" onClick={()=>{try{if(getDraftOwner()!==accountOwner)throw Error('账号已切换，请重新进入编辑器');onLoad(pending.markdown,pending);setActive(pending);setNotice('已载入文章，后续修改需点击保存文章');closeOpen();}catch(e){setError(e instanceof Error?e.message:'本机保存失败');}}}>载入排版</button>}</footer>
   </div></Modal>}
   {detach&&<Modal title="作为新稿继续编辑" onClose={()=>setDetach(false)}><div className="article-dialog"><p>当前正文保留，后续保存会新建文章。服务器中的“{active?.title}”保持原样。</p>{error&&<p role="alert" className="article-error">{error}</p>}<footer><button onClick={()=>setDetach(false)}>取消</button><button className="article-primary" onClick={()=>{try{saveArticleIdentity(owner,null,latest.current);setActive(null);setNotice('当前正文已作为新稿保留');setDetach(false);}catch{setError('本机保存失败，文章关联保持原样');}}}>作为新稿</button></footer></div></Modal>}
  </>;
